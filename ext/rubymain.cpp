@@ -187,8 +187,13 @@ static inline VALUE event_callback (VALUE e_value)
 		}
 		case EM_SSL_VERIFY:
 		{
-			VALUE conn = ensure_conn(signature);
-			VALUE should_accept = rb_funcall (conn, Intern_ssl_verify_peer, 1, rb_str_new(data_str, data_num));
+			VALUE ary = rb_ary_new_from_args(
+					2, data_num != 0 ? Qtrue : Qfalse,
+					rb_str_new(data_str, strlen(data_str)));
+			VALUE should_accept =
+				rb_funcall(EmModule, Intern_event_callback, 3,
+						BSIG2NUM(signature), INT2FIX(event),
+						ary);
 			if (RTEST(should_accept))
 				evma_accept_ssl_peer (signature);
 			return Qnil;

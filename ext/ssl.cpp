@@ -679,7 +679,7 @@ extern "C" int ssl_verify_wrapper(int preverify_ok UNUSED, X509_STORE_CTX *ctx)
 	SSL *ssl;
 	BUF_MEM *buf;
 	BIO *out;
-	int result;
+	bool verified;
 
 	cert = X509_STORE_CTX_get_current_cert(ctx);
 	ssl = (SSL*) X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
@@ -690,11 +690,12 @@ extern "C" int ssl_verify_wrapper(int preverify_ok UNUSED, X509_STORE_CTX *ctx)
 	BIO_write(out, "\0", 1);
 	BIO_get_mem_ptr(out, &buf);
 
-	ConnectionDescriptor *cd = dynamic_cast <ConnectionDescriptor*> (Bindable_t::GetObject(binding));
-	result = (cd->VerifySslPeer(buf->data) == true ? 1 : 0);
+	ConnectionDescriptor *cd = dynamic_cast<ConnectionDescriptor *>(
+			Bindable_t::GetObject(binding));
+	verified = cd->VerifySslPeer(buf->data, preverify_ok == 0 ? false : true);
 	BIO_free(out);
 
-	return result;
+	return verified ? 1 : 0;
 }
 
 #endif // WITH_SSL
