@@ -164,6 +164,7 @@ module EventMachine
       #
       #    em_connection.start_tls(context: ctx)
       def min_version=(version)
+        version = self.class.parse_proto_version(version)
         set_minmax_proto_version(version, @max_proto_version ||= nil)
         @min_proto_version = version
       end
@@ -179,6 +180,7 @@ module EventMachine
       #    ctx.min_version = :TLSv1_2
       #    ctx.max_version = nil
       def max_version=(version)
+        version = self.class.parse_proto_version(version)
         set_minmax_proto_version(@min_proto_version ||= nil, version)
         @max_proto_version = version
       end
@@ -199,10 +201,7 @@ module EventMachine
       # the context. As of Ruby/OpenSSL 2.1, this accessor method is
       # implemented to call #min_version= and #max_version= instead.
       def ssl_version=(version)
-        if version.is_a?(Array)
-          raise "Setting ssl_version with an array is deprecated. " +
-              "Use min_version and max_version instead."
-        end
+        return em_set_ssl_versions(*version) if version.is_a?(Array)
         version = version.to_s if version.is_a?(Symbol)
         if /(?<type>_client|_server)\z/ =~ version
           version = $`
@@ -223,7 +222,11 @@ module EventMachine
         TLSv1: OpenSSL::SSL::TLS1_VERSION,
         TLSv1_1: OpenSSL::SSL::TLS1_1_VERSION,
         TLSv1_2: OpenSSL::SSL::TLS1_2_VERSION,
-      }.freeze
+      }.merge(
+        defined?(OpenSSL::SSL::TLS1_3_VERSION) ? {
+          TLSv1_3: OpenSSL::SSL::TLS1_3_VERSION,
+        } : {}
+      ).freeze
       private_constant :METHODS_MAP
 
       #######################################################################
@@ -238,8 +241,7 @@ module EventMachine
 
       # TODO: add_certificate          => ossl_sslctx_add_certificate
 
-      # TODO: ciphers                  => ossl_sslctx_get_ciphers
-      # TODO: ciphers=                 => ossl_sslctx_set_ciphers
+      # @note ciphers will transformed into a string in rubymain.cpp
       attr_accessor :ciphers
 
       # TODO: ecdh_curves              => ossl_sslctx_set_ecdh_curves
@@ -269,6 +271,7 @@ module EventMachine
         OpenSSL::SSL::SSL2_VERSION => OpenSSL::SSL::OP_NO_SSLv2,
         OpenSSL::SSL::SSL3_VERSION => OpenSSL::SSL::OP_NO_SSLv3,
         OpenSSL::SSL::TLS1_VERSION => OpenSSL::SSL::OP_NO_TLSv1,
+        OpenSSL::SSL::TLS1_1_VERSION => OpenSSL::SSL::OP_NO_TLSv1_1,
         OpenSSL::SSL::TLS1_2_VERSION => OpenSSL::SSL::OP_NO_TLSv1_2,
       }.merge(
         defined?(OpenSSL::SSL::TLS1_3_VERSION) ? {
@@ -293,12 +296,31 @@ module EventMachine
       # This method parses the protocols and sets an internal protocol bitmask
       # for use by EventMachine.set_tls_parms.
       def set_minmax_proto_version(min, max)
-        min = self.class.parse_proto_version(min) || -1<<40
-        max = self.class.parse_proto_version(max) || +1<<40
-        range = (min..max)
-        @proto_op_no_bitmask = PROTO_OP_NO_MAP
-          .select {|proto| range.include?(proto) }
-          .reduce(0) {|bitmask, proto| bitmask | proto }
+        min = self.class.parse_proto_version(min)
+        max = self.class.parse_proto_version(max)
+        @proto_op_no_bitmask =
+          if !(min.nil? && max.nil?)
+            range = (min..max)
+            PROTO_OP_NO_MAP.reduce(0) {|bitmask, (version, op_no)|
+              bitmask | (range.include?(version) ? 0 : op_no)
+            }
+          else
+            0
+          end
+        self.options &= ~PROTO_OP_NO_SUM     # SSL_CTX_clear_options
+        self.options |= @proto_op_no_bitmask # SSL_CTX_set_options
+      end
+
+      # @deprecated Only provided for backwards compatibility. Use #min_version=
+      # and #max_version= instead.
+      def em_set_ssl_versions(*versions)
+        @proto_op_no_bitmask = versions.reduce(PROTO_OP_NO_SUM) { |bitmask, version|
+          ossl_version = self.class.parse_proto_version(version)
+          version_mask = PROTO_OP_NO_MAP.fetch(ossl_version) {
+            raise RuntimeError, "unrecognized version %p " % version
+          }
+          bitmask & ~version_mask
+        }
         self.options &= ~PROTO_OP_NO_SUM     # SSL_CTX_clear_options
         self.options |= @proto_op_no_bitmask # SSL_CTX_set_options
       end
@@ -322,6 +344,12 @@ module EventMachine
         return if frozen?
 
         guard_cert_options!
+
+        instance_variables.each do |name|
+          ivar = instance_variable_get(name)
+          ivar = -ivar.to_str if ivar.respond_to?(:to_str)
+        end
+
         @setup_done = true
         freeze
       end

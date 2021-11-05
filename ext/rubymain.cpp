@@ -402,38 +402,87 @@ static VALUE t_start_tls (VALUE self UNUSED, VALUE signature)
  extract_ssl_context_struct
  **************************/
 
-#define CTX_COPY_LONG(name) \
-	ctx->name = RB_NUM2LONG(rb_ivar_get(obj, id_i_##name)); while (0)
-#define CTX_COPY_INT(name) \
-	ctx->name = RB_NUM2INT(rb_ivar_get(obj, id_i_##name)); while (0)
-#define CTX_COPY_CStr(name) do {\
-	VALUE str = rb_ivar_get(obj, id_i_##name); \
-	ctx->name = NIL_P(str) ? NULL : StringValueCStr(str); \
+// converted into a C string here, so ssl.cpp doesn't need to deal with ruby API
+static VALUE
+em_sslctx_convert_ciphers_list(VALUE v)
+{
+    VALUE str, elem;
+    int i;
+
+    if (NIL_P(v))
+		return v;
+    else if (RB_TYPE_P(v, T_ARRAY)) {
+        str = rb_str_new(0, 0);
+        for (i = 0; i < RARRAY_LEN(v); i++) {
+            elem = rb_ary_entry(v, i);
+            if (RB_TYPE_P(elem, T_ARRAY)) elem = rb_ary_entry(elem, 0);
+            elem = rb_String(elem);
+            rb_str_append(str, elem);
+            if (i < RARRAY_LEN(v)-1) rb_str_cat2(str, ":");
+        }
+    } else {
+        str = v;
+        StringValue(str);
+    }
+	return str;
+}
+
+#define EM_SSL_CTX_GC_GUARD(val) \
+	if (!NIL_P(ivar)) rb_ary_push(gc_guard, val)
+
+#define EM_SSL_CTX_COPY_IVAR(RB_CAST, NAME, NILVAL) do {\
+	ivar = rb_ivar_defined(obj, id_i_##NAME) ? \
+		rb_ivar_get(obj, id_i_##NAME) : Qnil; \
+	ctx->NAME = NIL_P(ivar) ? NILVAL : RB_CAST(ivar); \
 } while (0)
 
-static void extract_ssl_context_struct (VALUE obj, em_ssl_ctx_t *ctx) {
+#define EM_SSL_CTX_COPY_IVAR_STR(NAME) do {\
+	EM_SSL_CTX_COPY_IVAR(StringValueCStr, NAME, NULL); \
+	EM_SSL_CTX_GC_GUARD(ivar); \
+} while (0)
+
+// n.b. the caller must hold onto the returned VALUE array, to guard the
+// underlying C strings from GC.
+static VALUE
+extract_ssl_context_struct (VALUE obj, em_ssl_ctx_t *ctx) {
 	if (!rb_obj_is_kind_of(obj, EmSslContext)) {
 		rb_raise(rb_eTypeError, "Not an EventMachine::SSL::Context");
 	}
-	CTX_COPY_LONG(options);
-	CTX_COPY_LONG(min_proto_version);
-	CTX_COPY_LONG(max_proto_version);
 
-	CTX_COPY_CStr(ca_file);
-	CTX_COPY_CStr(ca_path);
+	VALUE ivar = Qnil;
+	VALUE gc_guard = rb_ary_tmp_new(rb_ivar_count(obj));
 
-	ctx->cert_store = RTEST(rb_ivar_get(obj, id_i_cert_store));
+	EM_SSL_CTX_COPY_IVAR(RB_NUM2INT,   min_proto_version, 0);
+	EM_SSL_CTX_COPY_IVAR(RB_NUM2INT,   max_proto_version, 0);
+	EM_SSL_CTX_COPY_IVAR(RB_NUM2ULONG, options,           0);
+	EM_SSL_CTX_COPY_IVAR(RB_TEST,      cert_store,        true);
 
-	CTX_COPY_CStr(key);
-	CTX_COPY_CStr(private_key_file);
-	CTX_COPY_CStr(private_key_pass);
-	CTX_COPY_CStr(cert_chain_file);
-	CTX_COPY_CStr(ciphers);
-	CTX_COPY_CStr(ecdh_curve);
-	CTX_COPY_CStr(dhparam);
+	EM_SSL_CTX_COPY_IVAR_STR(ca_file);
+	EM_SSL_CTX_COPY_IVAR_STR(ca_path);
+	EM_SSL_CTX_COPY_IVAR_STR(cert);
+	EM_SSL_CTX_COPY_IVAR_STR(cert_chain_file);
+	EM_SSL_CTX_COPY_IVAR_STR(key);
+	EM_SSL_CTX_COPY_IVAR_STR(private_key_file);
+	EM_SSL_CTX_COPY_IVAR_STR(private_key_pass);
+	EM_SSL_CTX_COPY_IVAR_STR(ecdh_curve);
+	EM_SSL_CTX_COPY_IVAR_STR(dhparam);
 
-	const char *dhparam;
+	ivar = rb_ivar_defined(obj, id_i_ciphers) ?
+		rb_ivar_get(obj, id_i_ciphers) : Qnil;
+	ivar = em_sslctx_convert_ciphers_list(ivar);
+	if (!NIL_P(ivar)) {
+		ctx->ciphers = StringValueCStr(ivar);
+		EM_SSL_CTX_GC_GUARD(ivar);
+	} else {
+		ctx->ciphers = NULL;
+	}
+
+	return gc_guard;
 }
+
+#undef EM_SSL_CTX_COPY_IVAR_STR
+#undef EM_SSL_CTX_COPY_IVAR
+#undef EM_SSL_CTX_GC_GUARD
 
 /***************
 t_set_tls_parms
@@ -444,9 +493,16 @@ static VALUE t_set_tls_parms(
 		VALUE signature,
 		VALUE snihostname,
 		VALUE context) {
-	em_ssl_ctx_t ctx;
-	extract_ssl_context_struct(context, &ctx);
-	evma_set_tls_parms(NUM2BSIG(signature), StringValueCStr(snihostname), ctx);
+	VALUE gc_guard = Qundef;
+	try {
+		em_ssl_ctx_t ctx;
+		gc_guard = extract_ssl_context_struct(context, &ctx);
+		evma_set_tls_parms(NUM2BSIG(signature), StringValueCStr(snihostname), ctx);
+	} catch (const std::runtime_error& e) {
+		rb_raise (rb_eRuntimeError,
+				"EventMachine.set_tls_parms: %s", e.what());
+		RB_GC_GUARD(gc_guard);
+	}
 	return Qnil;
 }
 

@@ -49,21 +49,20 @@ class SslContext_t
  *
  */
 typedef struct em_ssl_ctx {
-	long options;
 	int min_proto_version;
 	int max_proto_version;
-
-	const char *ca_file;
-	const char *ca_path;
+	unsigned long options;
 
 	/* X509_STORE *cert_store; */
 	bool cert_store;
+	const char *ca_file;
+	const char *ca_path;
 
-	const char *private_key_file;
-	const char *key;
-	const char *private_key_pass;
-	const char *cert_chain_file;
 	const char *cert;
+	const char *cert_chain_file;
+	const char *key;
+	const char *private_key_file;
+	const char *private_key_pass;
 
 	const char *ciphers;
 	const char *ecdh_curve;

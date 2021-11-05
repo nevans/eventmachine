@@ -1371,10 +1371,8 @@ void ConnectionDescriptor::StartTls()
 	if (!SslContext)
 		throw std::runtime_error ("call SetTlsParms before calling StartTls");
 
-	SslContext_t *ctx = SslContext;
-	SslContext = NULL;
-
-	SslBox = new SslBox_t (bIsServer, SniHostName, ctx, GetBinding());
+	SslBox = new SslBox_t (bIsServer, SniHostName, SslContext, GetBinding());
+	SslContext = NULL; // It belongs to SslBox now
 	_DispatchCiphertext();
 
 }

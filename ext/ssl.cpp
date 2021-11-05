@@ -163,18 +163,17 @@ static void InitializeDefaultCredentials()
 InitializeDefaultX509Store
 ****************************/
 
-static void InitializeDefaultX509Store()
-{
+static X509_STORE *InitializeDefaultX509Store() {
 	X509_STORE *store;
 	if ((store = X509_STORE_new()) == NULL)
-		throw std::runtime_error ("X509_STORE_new returned NULL");
+		throw std::runtime_error("X509_STORE_new returned NULL");
 	if (X509_STORE_set_default_paths(store) != 1) {
 		X509_STORE_free(store);
-		throw std::runtime_error ("X509_STORE_set_default_paths failed");
+		throw std::runtime_error("X509_STORE_set_default_paths failed");
 	}
 	X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK_ALL);
+	return store;
 }
-
 
 /************************************
  * Copied/adapted from stdlib openssl/ssl.c
@@ -187,7 +186,7 @@ static void
 em_ossl_sslctx_set_options(SSL_CTX *ctx, unsigned long options)
 {
     SSL_CTX_clear_options(ctx, SSL_CTX_get_options(ctx));
-	SSL_CTX_set_options(ctx, NUM2ULONG(options));
+	SSL_CTX_set_options(ctx, options);
 }
 
 #define numberof(ary) (int)(sizeof(ary)/sizeof((ary)[0]))
@@ -199,7 +198,7 @@ em_ossl_sslctx_set_options(SSL_CTX *ctx, unsigned long options)
  * Sets the minimum and maximum supported protocol versions. See #min_version=
  * and #max_version=.
  */
-	static void
+static void
 em_ossl_sslctx_set_minmax_proto_version(SSL_CTX *ctx, int min, int max)
 {
 #ifdef HAVE_SSL_CTX_SET_MIN_PROTO_VERSION
@@ -238,60 +237,51 @@ em_ossl_sslctx_set_minmax_proto_version(SSL_CTX *ctx, int min, int max)
 #endif
 }
 
-/**************************
-SslContext_t::SslContext_t
-**************************/
-
-SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
-	bIsServer (is_server),
-	pCtx (NULL),
-	PrivateKey (NULL),
-	Certificate (NULL)
+static void
+em_ossl_sslctx_set_cert_store(SSL_CTX *ctx, X509_STORE *store)
 {
-	/* TODO: Also, in this implementation, server-side connections use statically defined X-509 defaults.
-	 * One thing I'm really not clear on is whether or not you have to explicitly free X509 and EVP_PKEY
-	 * objects when we call our destructor, or whether just calling SSL_CTX_free is enough.
-	 */
-
-	if (!bLibraryInitialized) {
-		bLibraryInitialized = true;
-		SSL_library_init();
-		OpenSSL_add_ssl_algorithms();
-		OpenSSL_add_all_algorithms();
-		SSL_load_error_strings();
-		ERR_load_crypto_strings();
-
-		InitializeDefaultCredentials();
-		InitializeDefaultX509Store();
+	if (store) {
+#ifdef HAVE_SSL_CTX_SET1_CERT_STORE
+		SSL_CTX_set1_cert_store(ctx, store);
+#else
+		SSL_CTX_set_cert_store(ctx, store);
+		X509_STORE_up_ref(store);
+#endif
 	}
-	#ifdef HAVE_TLS_SERVER_METHOD
-	pCtx = SSL_CTX_new (bIsServer ? TLS_server_method() : TLS_client_method());
-	#else
-	pCtx = SSL_CTX_new (bIsServer ? SSLv23_server_method() : SSLv23_client_method());
-	#endif
-	if (!pCtx)
-		throw std::runtime_error ("no SSL context");
+}
 
-	em_ossl_sslctx_set_options(pCtx, ctx->options);
-	em_ossl_sslctx_set_minmax_proto_version(
-			pCtx,
-			ctx->min_proto_version,
-			ctx->max_proto_version);
+static void
+em_ossl_sslctx_set_ca_file_and_path(
+		SSL_CTX *ctx,
+		const char *ca_file,
+		const char *ca_path)
+{
+#ifdef HAVE_SSL_CTX_LOAD_VERIFY_FILE
+	if (ca_file && !SSL_CTX_load_verify_file(ctx, ca_file))
+		throw std::runtime_error ("SSL_CTX_load_verify_file");
+	if (ca_path && !SSL_CTX_load_verify_dir(ctx, ca_path))
+		throw std::runtime_error ("SSL_CTX_load_verify_dir");
+#else
+	if(ca_file || ca_path){
+		if (!SSL_CTX_load_verify_locations(ctx, ca_file, ca_path))
+			rb_warning("can't set verify locations");
+	}
+#endif
+}
 
-	#ifdef SSL_MODE_RELEASE_BUFFERS
-	SSL_CTX_set_mode (pCtx, SSL_MODE_RELEASE_BUFFERS);
-	#endif
+// n.b: cstr is evaluated twice. just a coalescing NULL check
+#define CPPSAFE_CSTR(cstr) cstr ? cstr : ""
 
+
+static void
+em_ossl_sslctx_use_certificate(SSL_CTX *pCtx, const em_ssl_ctx_t *opts)
+{
 	int e;
-	std::string certchainfile = ctx->cert_chain_file;
-	std::string cert          = ctx->cert;
-	std::string key           = ctx->key;
-	std::string private_key_file = ctx->private_key_file;
-	std::string private_key_pass = ctx->private_key_pass;
-
-	std::string dhparam       = ctx->dhparam;
-	std::string ecdh_curve    = ctx->ecdh_curve;
-	std::string ciphers       = ctx->ciphers;
+	std::string cert             = CPPSAFE_CSTR(opts->cert);
+	std::string certchainfile    = CPPSAFE_CSTR(opts->cert_chain_file);
+	std::string key              = CPPSAFE_CSTR(opts->key);
+	std::string private_key_file = CPPSAFE_CSTR(opts->private_key_file);
+	std::string private_key_pass = CPPSAFE_CSTR(opts->private_key_pass);
 
 	// As indicated in man(3) ssl_ctx_use_privatekey_file
 	// To change a certificate, private key pair the new certificate needs to be set with
@@ -342,20 +332,102 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 		}
 		assert (e > 0);
 	}
+}
+
+static void
+em_ossl_sslctx_set_default_certificate(
+		SSL_CTX *pCtx,
+		const char *cert_chain_file,
+		const char *cert,
+		const char *private_key_file,
+		const char *key)
+{
+	int e;
+	if (!(cert_chain_file && *cert_chain_file) && !(cert && *cert)) {
+		// ensure default private material is configured for ssl
+		e = SSL_CTX_use_certificate (pCtx, DefaultCertificate);
+		if (e <= 0) ERR_print_errors_fp(stderr);
+		assert (e > 0);
+	}
+	if (!(private_key_file && *private_key_file) && !(key && *key)) {
+		// ensure default private material is configured for ssl
+		e = SSL_CTX_use_PrivateKey (pCtx, DefaultPrivateKey);
+		if (e <= 0) ERR_print_errors_fp(stderr);
+		assert (e > 0);
+	}
+}
+
+static void
+em_ossl_sslctx_set_cipher_list(SSL_CTX *pCtx, const char *ciphers)
+{
+	if (ciphers && *ciphers)
+		SSL_CTX_set_cipher_list (pCtx, ciphers);
+	else
+		SSL_CTX_set_cipher_list (pCtx, "ALL:!ADH:!LOW:!EXP:!DES-CBC3-SHA:@STRENGTH");
+}
+
+
+/**************************
+SslContext_t::SslContext_t
+**************************/
+
+SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
+	bIsServer (is_server),
+	pCtx (NULL),
+	PrivateKey (NULL),
+	Certificate (NULL)
+{
+	/* TODO: Also, in this implementation, server-side connections use statically defined X-509 defaults.
+	 * One thing I'm really not clear on is whether or not you have to explicitly free X509 and EVP_PKEY
+	 * objects when we call our destructor, or whether just calling SSL_CTX_free is enough.
+	 */
+
+	if (!bLibraryInitialized) {
+		bLibraryInitialized = true;
+		SSL_library_init();
+		OpenSSL_add_ssl_algorithms();
+		OpenSSL_add_all_algorithms();
+		SSL_load_error_strings();
+		ERR_load_crypto_strings();
+
+		InitializeDefaultCredentials();
+		bDefaultX509Store = InitializeDefaultX509Store();
+	}
+
+	#ifdef HAVE_TLS_SERVER_METHOD
+	pCtx = SSL_CTX_new (bIsServer ? TLS_server_method() : TLS_client_method());
+	#else
+	pCtx = SSL_CTX_new (bIsServer ? SSLv23_server_method() : SSLv23_client_method());
+	#endif
+	if (!pCtx)
+		throw std::runtime_error ("no SSL context");
+
+	#ifdef SSL_MODE_RELEASE_BUFFERS
+	SSL_CTX_set_mode (pCtx, SSL_MODE_RELEASE_BUFFERS);
+	#endif
+
+	em_ossl_sslctx_set_options(pCtx, ctx->options);
+	em_ossl_sslctx_set_minmax_proto_version(
+			pCtx,
+			ctx->min_proto_version,
+			ctx->max_proto_version);
+	em_ossl_sslctx_set_cert_store(
+			pCtx,
+			ctx->cert_store ? bDefaultX509Store : NULL);
+	em_ossl_sslctx_set_ca_file_and_path(pCtx, ctx->ca_file, ctx->ca_path);
+	em_ossl_sslctx_use_certificate(pCtx, ctx);
+
+	int e;
 
 	if (bIsServer) {
-		if (certchainfile.length() == 0 && cert.length() == 0) {
-			// ensure default private material is configured for ssl
-			e = SSL_CTX_use_certificate (pCtx, DefaultCertificate);
-			if (e <= 0) ERR_print_errors_fp(stderr);
-			assert (e > 0);
-		}
-		if (private_key_file.length() == 0 && key.length() == 0) {
-			// ensure default private material is configured for ssl
-			e = SSL_CTX_use_PrivateKey (pCtx, DefaultPrivateKey);
-			if (e <= 0) ERR_print_errors_fp(stderr);
-			assert (e > 0);
-		}
+		em_ossl_sslctx_set_default_certificate(
+				pCtx,
+				ctx->cert_chain_file,
+				ctx->cert,
+				ctx->private_key_file,
+				ctx->key);
+
+		std::string dhparam = ctx->dhparam ? ctx->dhparam : "";
 		if (dhparam.length() > 0) {
 			DH   *dh;
 			BIO  *bio;
@@ -382,6 +454,7 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 			BIO_free(bio);
 		}
 
+		std::string ecdh_curve = ctx->ecdh_curve ? ctx->ecdh_curve : "";
 		if (ecdh_curve.length() > 0) {
 			#if OPENSSL_VERSION_NUMBER >= 0x0090800fL && !defined(OPENSSL_NO_ECDH)
 				int      nid;
@@ -412,18 +485,13 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 		}
 	}
 
-	if (ciphers.length() > 0)
-		SSL_CTX_set_cipher_list (pCtx, ciphers.c_str());
-	else
-		SSL_CTX_set_cipher_list (pCtx, "ALL:!ADH:!LOW:!EXP:!DES-CBC3-SHA:@STRENGTH");
+	em_ossl_sslctx_set_cipher_list(pCtx, ctx->ciphers);
 
 	if (bIsServer) {
 		SSL_CTX_sess_set_cache_size (pCtx, 128);
 		SSL_CTX_set_session_id_context (pCtx, (unsigned char*)"eventmachine", 12);
 	}
 }
-
-
 
 /***************************
 SslContext_t::~SslContext_t
