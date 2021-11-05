@@ -254,7 +254,12 @@ module EventMachine
 
         h,prt,ssl = args[:host], Integer(args[:port]), (args[:tls] || args[:ssl])
         conn = EM.connect( h, prt, self )
-        conn.start_tls if ssl
+        if ssl
+          ssl = !ssl.respond_to?(:to_hash) ?
+            { hostname: h } :
+            { hostname: h, **ssl }
+          conn.start_tls ssl
+        end
         conn.set_default_host_header( h, prt, ssl )
         conn
       end
@@ -326,10 +331,10 @@ module EventMachine
       # subsequent requests.
       #
       # @private
-      def unbind
-        super
+      def unbind(reason)
+        super()
         @closed = true
-        (@requests || []).each {|r| r.fail}
+        (@requests || []).each {|r| r.fail unbound: reason}  # =>
       end
 
       # @private
@@ -338,7 +343,7 @@ module EventMachine
         args[:authorization] = @authorization unless args.has_key?(:authorization)
         r = Request.new self, args
         if @closed
-          r.fail
+          r.fail "connection closed"
         else
           (@requests ||= []).unshift r
           @connected.callback {r.send_request}

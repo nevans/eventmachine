@@ -577,9 +577,9 @@ ConnectionDescriptor::ConnectionDescriptor (SOCKET sd, EventMachine_t *em):
 	bWriteAttemptedAfterClose (false),
 	OutboundDataSize (0),
 	#ifdef WITH_SSL
+	SslContext (NULL),
 	SslBox (NULL),
 	bHandshakeSignaled (false),
-	bSslVerifyPeer (false),
 	bSslPeerAccepted(false),
 	#endif
 	#ifdef HAVE_KQUEUE
@@ -603,6 +603,8 @@ ConnectionDescriptor::~ConnectionDescriptor()
 		OutboundPages[i].Free();
 
 	#ifdef WITH_SSL
+	if (SslContext)
+		delete SslContext; // TODO: move into ruby, ivar or local var
 	if (SslBox)
 		delete SslBox;
 	#endif
@@ -978,7 +980,7 @@ void ConnectionDescriptor::Read()
 		// NOTICE, we're reading one less than the buffer size.
 		// That's so we can put a guard byte at the end of what we send
 		// to user code.
-		
+
 
 		int r = read (sd, readbuffer, sizeof(readbuffer) - 1);
 #ifdef OS_WIN32
@@ -1366,8 +1368,11 @@ void ConnectionDescriptor::StartTls()
 {
 	if (SslBox)
 		throw std::runtime_error ("SSL/TLS already running on connection");
+	if (!SslContext)
+		throw std::runtime_error ("call SetTlsParms before calling StartTls");
 
-	SslBox = new SslBox_t (bIsServer, PrivateKeyFilename, PrivateKey, PrivateKeyPass, CertChainFilename, Cert, bSslVerifyPeer, bSslFailIfNoPeerCert, SniHostName, CipherList, EcdhCurve, DhParam, SslOptions, GetBinding());
+	SslBox = new SslBox_t (bIsServer, SniHostName, SslContext, GetBinding());
+	SslContext = NULL; // It belongs to SslBox now
 	_DispatchCiphertext();
 
 }
@@ -1384,35 +1389,24 @@ ConnectionDescriptor::SetTlsParms
 *********************************/
 
 #ifdef WITH_SSL
-void ConnectionDescriptor::SetTlsParms (const char *privkey_filename, const char *privkey, const char *privkeypass, const char *certchain_filename, const char *cert, bool verify_peer, bool fail_if_no_peer_cert, const char *sni_hostname, const char *cipherlist, const char *ecdh_curve, const char *dhparam, uint64_t options)
-{
+void ConnectionDescriptor::SetTlsParms(
+		const em_ssl_ctx_t *ctxParams,
+		const char *sni_hostname) {
 	if (SslBox)
 		throw std::runtime_error ("call SetTlsParms before calling StartTls");
-	if (privkey_filename && *privkey_filename)
-		PrivateKeyFilename = privkey_filename;
-	if (privkey && *privkey)
-		PrivateKey = privkey;
-	if (privkeypass && *privkeypass)
-		PrivateKeyPass = privkeypass;
-	if (certchain_filename && *certchain_filename)
-		CertChainFilename = certchain_filename;
-	if (cert && *cert)
-		Cert = cert;
-	bSslVerifyPeer     = verify_peer;
-	bSslFailIfNoPeerCert = fail_if_no_peer_cert;
-
-	if (sni_hostname && *sni_hostname)
-		SniHostName = sni_hostname;
-	if (cipherlist && *cipherlist)
-		CipherList = cipherlist;
-	if (ecdh_curve && *ecdh_curve)
-		EcdhCurve = ecdh_curve;
-	if (dhparam && *dhparam)
-		DhParam = dhparam;
-	SslOptions = options;
+	if (!ctxParams)
+		throw std::runtime_error ("send em_ssl_ctx_t to SetTlsParms");
+	if (SslContext) {
+		delete SslContext;
+		SslContext = NULL;
+	}
+	SslContext = new SslContext_t (bIsServer, ctxParams);
+	SniHostName = sni_hostname ? sni_hostname : "";
 }
 #else
-void ConnectionDescriptor::SetTlsParms (const char *privkey_filename UNUSED, const char *privkey UNUSED, const char *privkeypass UNUSED, const char *certchain_filename UNUSED, const char *cert UNUSED, bool verify_peer UNUSED, bool fail_if_no_peer_cert UNUSED, const char *sni_hostname UNUSED, const char *cipherlist UNUSED, const char *ecdh_curve UNUSED, const char *dhparam UNUSED, uint64_t options UNUSED)
+void ConnectionDescriptor::SetTlsParms (
+		const em_ssl_ctx_t *ctxParams UNUSED,
+		const char *sni_hostname UNUSED) {
 {
 	throw std::runtime_error ("Encryption not available on this event-machine");
 }
