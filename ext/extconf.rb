@@ -255,8 +255,15 @@ end
 # OpenSSL version checks
 #   below are yes for 1.1.0 & later, may need to check func rather than macro
 #   with versions after 1.1.1
-have_func  "TLS_server_method"            , "openssl/ssl.h"
-have_macro "SSL_CTX_set_min_proto_version", "openssl/ssl.h"
+have_func "TLS_server_method",                      "openssl/ssl.h"
+
+have_func "SSL_CTX_set_min_proto_version(NULL, 0)", "openssl/ssl.h"
+
+# added in 1.1.1
+have_func "SSL_CTX_set1_cert_store(NULL, NULL)",    "openssl/ssl.h"
+
+# added in 3.0.0
+have_func "SSL_CTX_load_verify_file",               "openssl/ssl.h"
 
 # below exists in 1.1.0 and later, but isn't documented until 3.0.0
 have_func "SSL_CTX_set_dh_auto(NULL, 0)"  , "openssl/ssl.h"
@@ -280,6 +287,7 @@ TRY_LINK.sub!('$(CC)', '$(CXX)')
   -Wno-ignored-qualifiers
   -Wno-unused-result
   -Wno-address
+  -g
 ).select do |flag|
   try_link('int main() {return 0;}', flag)
 end.each do |flag|
