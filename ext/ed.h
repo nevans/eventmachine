@@ -23,6 +23,8 @@ See the file COPYING for complete licensing information.
 
 class EventMachine_t; // forward reference
 #ifdef WITH_SSL
+typedef struct em_ssl_ctx em_ssl_ctx_t;
+class SslContext_t; // forward reference
 class SslBox_t; // forward reference
 #endif
 
@@ -71,8 +73,8 @@ class EventableDescriptor: public Bindable_t
 		virtual bool GetSockname (struct sockaddr*, socklen_t*) = 0;
 		virtual bool GetSubprocessPid (pid_t*) {return false;}
 
+		virtual void SetTlsParms (const char *, const em_ssl_ctx_t *) {}
 		virtual void StartTls() {}
-		virtual void SetTlsParms (const char *, const char *, const char *, const char *, const char *, bool, bool, const char *, const char *, const char *, const char *, int) {}
 
 		#ifdef WITH_SSL
 		virtual X509 *GetPeerCert() {return NULL;}
@@ -212,8 +214,8 @@ class ConnectionDescriptor: public EventableDescriptor
 		// Do we have any data to write? This is used by ShouldDelete.
 		virtual int GetOutboundDataSize() {return OutboundDataSize;}
 
+		virtual void SetTlsParms (const char *, const em_ssl_ctx_t *);
 		virtual void StartTls();
-		virtual void SetTlsParms (const char *, const char *,  const char *, const char *, const char *, bool, bool, const char *, const char *, const char *, const char *, int);
 
 		#ifdef WITH_SSL
 		virtual X509 *GetPeerCert();
@@ -258,19 +260,9 @@ class ConnectionDescriptor: public EventableDescriptor
 		int OutboundDataSize;
 
 		#ifdef WITH_SSL
+		SslContext_t *SslContext;
 		SslBox_t *SslBox;
-		std::string CertChainFilename;
-		std::string Cert;
-		std::string PrivateKeyFilename;
-		std::string PrivateKey;
-		std::string PrivateKeyPass;
-		std::string CipherList;
-		std::string EcdhCurve;
-		std::string DhParam;
-		int Protocols;
 		bool bHandshakeSignaled;
-		bool bSslVerifyPeer;
-		bool bSslFailIfNoPeerCert;
 		std::string SniHostName;
 		bool bSslPeerAccepted;
 		#endif

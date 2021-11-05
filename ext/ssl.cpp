@@ -25,7 +25,8 @@ See the file COPYING for complete licensing information.
 
 bool SslContext_t::bLibraryInitialized = false;
 
-
+// for now, the *only* X509 store
+X509_STORE* SslContext_t::bDefaultX509Store = NULL;
 
 static void InitializeDefaultCredentials();
 static EVP_PKEY *DefaultPrivateKey = NULL;
@@ -158,13 +159,27 @@ static void InitializeDefaultCredentials()
 	BIO_free (bio);
 }
 
+/****************************
+InitializeDefaultX509Store
+****************************/
 
+static void InitializeDefaultX509Store()
+{
+	X509_STORE *store;
+	if ((store = X509_STORE_new()) == NULL)
+		throw std::runtime_error ("X509_STORE_new returned NULL");
+	if (X509_STORE_set_default_paths(store) != 1) {
+		X509_STORE_free(store);
+		throw std::runtime_error ("X509_STORE_set_default_paths failed");
+	}
+	X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK_ALL);
+}
 
 /**************************
 SslContext_t::SslContext_t
 **************************/
 
-SslContext_t::SslContext_t (bool is_server, const std::string &privkeyfile, const std::string &privkey, const std::string &privkeypass, const std::string &certchainfile, const std::string &cert, const std::string &cipherlist, const std::string &ecdh_curve, const std::string &dhparam, int ssl_version) :
+SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 	bIsServer (is_server),
 	pCtx (NULL),
 	PrivateKey (NULL),
@@ -184,6 +199,7 @@ SslContext_t::SslContext_t (bool is_server, const std::string &privkeyfile, cons
 		ERR_load_crypto_strings();
 
 		InitializeDefaultCredentials();
+		InitializeDefaultX509Store();
 	}
 	#ifdef HAVE_TLS_SERVER_METHOD
 	pCtx = SSL_CTX_new (bIsServer ? TLS_server_method() : TLS_client_method());
@@ -386,10 +402,14 @@ SslContext_t::~SslContext_t()
 SslBox_t::SslBox_t
 ******************/
 
-SslBox_t::SslBox_t (bool is_server, const std::string &privkeyfile, const std::string &privkey, const std::string &privkeypass, const std::string &certchainfile, const std::string &cert, bool verify_peer, bool fail_if_no_peer_cert, const std::string &snihostname, const std::string &cipherlist, const std::string &ecdh_curve, const std::string &dhparam, int ssl_version, const uintptr_t binding):
+SslBox_t::SslBox_t (
+		bool is_server,
+		const std::string &snihostname,
+		const char *sni_hostname,
+		const em_ssl_ctx_t *ctx,
+		const uintptr_t binding):
 	bIsServer (is_server),
 	bHandshakeCompleted (false),
-	bVerifyPeer (verify_peer),
 	bFailIfNoPeerCert (fail_if_no_peer_cert),
 	pSSL (NULL),
 	pbioRead (NULL),
@@ -399,7 +419,7 @@ SslBox_t::SslBox_t (bool is_server, const std::string &privkeyfile, const std::s
 	 * a new one every time we come here.
 	 */
 
-	Context = new SslContext_t (bIsServer, privkeyfile, privkey, privkeypass, certchainfile, cert, cipherlist, ecdh_curve, dhparam, ssl_version);
+	Context = new SslContext_t (bIsServer, ctx);
 	assert (Context);
 
 	pbioRead = BIO_new (BIO_s_mem());
@@ -682,8 +702,9 @@ extern "C" int ssl_verify_wrapper(int preverify_ok UNUSED, X509_STORE_CTX *ctx)
 	bool verified;
 
 	cert = X509_STORE_CTX_get_current_cert(ctx);
-	ssl = (SSL*) X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
-	binding = (uintptr_t) SSL_get_ex_data(ssl, 0);
+	ssl = (SSL *)X509_STORE_CTX_get_ex_data(
+			ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+	binding = (uintptr_t)SSL_get_ex_data(ssl, 0);
 
 	out = BIO_new(BIO_s_mem());
 	PEM_write_bio_X509(out, cert);

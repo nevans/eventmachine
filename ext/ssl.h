@@ -21,8 +21,9 @@ See the file COPYING for complete licensing information.
 #ifndef __SslBox__H_
 #define __SslBox__H_
 
-
-
+#include "page.h"
+#include <openssl/ossl_typ.h>
+#include <string>
 
 #ifdef WITH_SSL
 
@@ -30,14 +31,50 @@ See the file COPYING for complete licensing information.
 class SslContext_t
 ******************/
 
+// "SSLContext < Struct" => em_ssl_ctx_t => SslContext_t => SSL_CTX
+// This can definitely be simplified!
+
+/* This struct, em_ssl_ctx, is used simply to pass values from the ruby API
+ * layer into this C++ layer while keeping them seperated.  Is this useful?
+ * Probably it's not.
+ *
+ * Proposal: the immediate SSL_CTX wrapping functionality should be moved into
+ * a near-duplicate of stdlib's OpenSSL::SSL::SSLContext.  i.e. EM::SSL::Context
+ * should use TypedData_Get_Struct around an SSL_CTX object.
+ *
+ * With that done, this C++ layer should probably just be deleted.  It won't be
+ * doing much.  The other EM C++ code can reference the SSL_CTX object using the
+ * openssl API, or (where necessary) use the ruby VALUE wrapper via
+ * SSL_CTX_get_ex_data.
+ *
+ */
+typedef struct em_ssl_ctx {
+	char *ca_file;
+	char *ca_path;
+	X509_STORE *cert_store;
+	const char *privkeyfile;
+	const char *privkey;
+	const char *privkeypass;
+	const char *certchainfile;
+	const char *cert;
+	bool verify_peer;
+	bool fail_if_no_peer_cert;
+	const char *snihostname;
+	const char *cipherlist;
+	const char *ecdh_curve;
+	const char *dhparam;
+	long options;
+} em_ssl_ctx_t;
+
 class SslContext_t
 {
 	public:
-		SslContext_t (bool is_server, const std::string &privkeyfile, const std::string &privkey, const std::string &privkeypass, const std::string &certchainfile, const std::string &cert, const std::string &cipherlist, const std::string &ecdh_curve, const std::string &dhparam, int ssl_version);
+		SslContext_t (bool is_server, const em_ssl_ctx_t *context);
 		virtual ~SslContext_t();
 
 	private:
 		static bool bLibraryInitialized;
+		static X509_STORE* bDefaultX509Store;
 
 	private:
 		bool bIsServer;
@@ -61,7 +98,11 @@ class SslBox_t
 class SslBox_t
 {
 	public:
-		SslBox_t (bool is_server, const std::string &privkeyfile, const std::string &privkey, const std::string &privkeypass, const std::string &certchainfile, const std::string &cert, bool verify_peer, bool fail_if_no_peer_cert, const std::string &snihostname, const std::string &cipherlist, const std::string &ecdh_curve, const std::string &dhparam, int ssl_version, const uintptr_t binding);
+		SslBox_t (
+				bool is_server,
+				const std::string &snihostname,
+				const em_ssl_ctx_t *context,
+				const uintptr_t binding);
 		virtual ~SslBox_t();
 
 		int PutPlaintext (const char*, int);
@@ -85,8 +126,6 @@ class SslBox_t
 
 		bool bIsServer;
 		bool bHandshakeCompleted;
-		bool bVerifyPeer;
-		bool bFailIfNoPeerCert;
 		SSL *pSSL;
 		BIO *pbioRead;
 		BIO *pbioWrite;

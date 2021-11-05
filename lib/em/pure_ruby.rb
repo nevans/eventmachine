@@ -262,7 +262,24 @@ module EventMachine
     # parameter list will grow as we add more supported features. ALL of these
     # parameters are optional, and can be specified as empty or nil strings.
     # @private
-    def set_tls_parms signature, priv_key_path, priv_key, priv_key_pass, cert_chain_path, cert, verify_peer, fail_if_no_peer_cert, sni_hostname, cipher_list, ecdh_curve, dhparam, protocols_bitmask
+    #
+    # TODO: migrate most TLS parms to SSLContext, which can mimick stdlib.
+    def set_tls_parms(
+      signature,
+      priv_key_path,
+      priv_key,
+      priv_key_pass,
+      cert_chain_path,
+      cert,
+      verify_peer,
+      fail_if_no_peer_cert,
+      sni_hostname,
+      cipher_list,
+      ecdh_curve,
+      dhparam,
+      protocols_bitmask,
+      context,
+    )
       bitmask = protocols_bitmask
       ssl_options = OpenSSL::SSL::OP_ALL
       ssl_options |= OpenSSL::SSL::OP_NO_SSLv2 if defined?(OpenSSL::SSL::OP_NO_SSLv2) && EM_PROTO_SSLv2 & bitmask == 0
@@ -285,17 +302,26 @@ module EventMachine
       @tls_parms[signature][:cipher_list] = cipher_list.gsub(/,\s*/, ':') if tls_parm_set?(cipher_list)
       @tls_parms[signature][:dhparam] = File.read(dhparam) if tls_parm_set?(dhparam)
       @tls_parms[signature][:ecdh_curve] = ecdh_curve if tls_parm_set?(ecdh_curve)
+      # TODO: move most of the above into :context
+      @tls_parms[signature][:context] = context or raise ArgumentError, "missing context"
     end
 
     def start_tls signature
       selectable = Reactor.instance.get_selectable(signature) or raise "unknown io selectable for start_tls"
       tls_parms = @tls_parms[signature]
+      fake_ctx = tls_parms.fetch(:context)
       ctx = OpenSSL::SSL::SSLContext.new
       ctx.options = tls_parms[:ssl_options]
       ctx.cert = DefaultCertificate.cert
       ctx.key = DefaultCertificate.key
-      ctx.cert_store = OpenSSL::X509::Store.new
-      ctx.cert_store.set_default_paths
+      ctx.ca_path    = fake_ctx.ca_path
+      ctx.ca_file    = fake_ctx.ca_file
+      ctx.cert_store =
+        if fake_ctx.cert_store == true
+          OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE
+        elsif fake_ctx.cert_store
+          fake_ctx.cert_store
+        end
       ctx.cert = OpenSSL::X509::Certificate.new(tls_parms[:cert_chain]) if tls_parms[:cert_chain]
       if tls_parms[:priv_key_pass]!=nil
         ctx.key = OpenSSL::PKey::RSA.new(tls_parms[:priv_key],tls_parms[:priv_key_pass]) if tls_parms[:priv_key]
