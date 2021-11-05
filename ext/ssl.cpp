@@ -478,8 +478,6 @@ em_ossl_sslctx_set_cipher_list(SSL_CTX *pCtx, const char *ciphers)
 		SSL_CTX_set_cipher_list (pCtx, "ALL:!ADH:!LOW:!EXP:!DES-CBC3-SHA:@STRENGTH");
 }
 
-
-
 /**************************
 SslContext_t::SslContext_t
 **************************/
@@ -866,7 +864,6 @@ extern "C" int ssl_verify_wrapper(int ok, X509_STORE_CTX *ctx)
 	binding = (uintptr_t) SSL_get_ex_data(ssl, em_ssl_ssl_ex_binding_idx);
 	ConnectionDescriptor *cd = dynamic_cast <ConnectionDescriptor*> (Bindable_t::GetObject(binding));
 	ok = cd->VerifySslPeer(ok, ctx) ? 1 : 0;
-
 	return ok;
 }
 

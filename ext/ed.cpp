@@ -199,13 +199,13 @@ void EventableDescriptor::Close()
 	// Close the socket right now. Intended for emergencies.
 	if (MySocket != INVALID_SOCKET) {
 		MyEventMachine->Deregister (this);
-		
+
 		// Do not close STDIN, STDOUT, STDERR
 		if (MySocket > 2 && !bAttached) {
 			shutdown (MySocket, 1);
 			close (MySocket);
 		}
-		
+
 		MySocket = INVALID_SOCKET;
 	}
 }
