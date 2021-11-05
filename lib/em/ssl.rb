@@ -240,6 +240,7 @@ module EventMachine
 
       # TODO: ciphers                  => ossl_sslctx_get_ciphers
       # TODO: ciphers=                 => ossl_sslctx_set_ciphers
+      attr_accessor :ciphers
 
       # TODO: ecdh_curves              => ossl_sslctx_set_ecdh_curves
 
@@ -407,9 +408,7 @@ module EventMachine
       #
       # @param curves [String] The curve for ECDHE ciphers. See available ciphers
       #   with 'openssl ecparam -list_curves'
-      def ecdh_curve=(curves)
-        self.ecdh_curves = curves
-      end
+      attr_accessor :ecdh_curve
 
       # @return [String] The local path of a file containing DH parameters for
       #   EDH ciphers in [PEM

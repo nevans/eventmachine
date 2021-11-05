@@ -577,8 +577,8 @@ ConnectionDescriptor::ConnectionDescriptor (SOCKET sd, EventMachine_t *em):
 	bWriteAttemptedAfterClose (false),
 	OutboundDataSize (0),
 	#ifdef WITH_SSL
+	SslContext (NULL),
 	SslBox (NULL),
-	SslCtxParams (NULL),
 	bHandshakeSignaled (false),
 	bSslPeerAccepted(false),
 	#endif
@@ -603,6 +603,8 @@ ConnectionDescriptor::~ConnectionDescriptor()
 		OutboundPages[i].Free();
 
 	#ifdef WITH_SSL
+	if (SslContext)
+		delete SslContext; // TODO: move into ruby, ivar or local var
 	if (SslBox)
 		delete SslBox;
 	#endif
@@ -1366,12 +1368,13 @@ void ConnectionDescriptor::StartTls()
 {
 	if (SslBox)
 		throw std::runtime_error ("SSL/TLS already running on connection");
+	if (!SslContext)
+		throw std::runtime_error ("call SetTlsParms before calling StartTls");
 
-	SslBox = new SslBox_t (
-			bIsServer,
-			SniHostName,
-			SslCtxParams,
-			GetBinding());
+	SslContext_t *ctx = SslContext;
+	SslContext = NULL;
+
+	SslBox = new SslBox_t (bIsServer, SniHostName, ctx, GetBinding());
 	_DispatchCiphertext();
 
 }
@@ -1390,19 +1393,23 @@ ConnectionDescriptor::SetTlsParms
 #ifdef WITH_SSL
 void ConnectionDescriptor::SetTlsParms(
 		const char *sni_hostname,
-		const em_ssl_ctx_t *ctx) {
+		const em_ssl_ctx_t *ctxParams) {
 	if (SslBox)
 		throw std::runtime_error ("call SetTlsParms before calling StartTls");
-	if (!ctx)
-		throw std::runtime_error ("send a context to SetTlsParms");
-	SslCtxParams = ctx;
+	if (!ctxParams)
+		throw std::runtime_error ("send em_ssl_ctx_t to SetTlsParms");
+	if (SslContext) {
+		delete SslContext;
+		SslContext = NULL;
+	}
+	SslContext = new SslContext_t (bIsServer, ctxParams);
 	if (sni_hostname && *sni_hostname)
 		SniHostName = sni_hostname;
 }
 #else
 void ConnectionDescriptor::SetTlsParms (
 		const char *sni_hostname UNUSED,
-		const em_ssl_ctx_t *ctx UNUSED) {
+		const em_ssl_ctx_t *ctxParams UNUSED) {
 {
 	throw std::runtime_error ("Encryption not available on this event-machine");
 }

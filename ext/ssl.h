@@ -49,21 +49,25 @@ class SslContext_t
  *
  */
 typedef struct em_ssl_ctx {
-	char *ca_file;
-	char *ca_path;
-	X509_STORE *cert_store;
-	const char *privkeyfile;
-	const char *privkey;
-	const char *privkeypass;
-	const char *certchainfile;
+	long options;
+	int min_proto_version;
+	int max_proto_version;
+
+	const char *ca_file;
+	const char *ca_path;
+
+	/* X509_STORE *cert_store; */
+	bool cert_store;
+
+	const char *private_key_file;
+	const char *key;
+	const char *private_key_pass;
+	const char *cert_chain_file;
 	const char *cert;
-	bool verify_peer;
-	bool fail_if_no_peer_cert;
-	const char *snihostname;
-	const char *cipherlist;
+
+	const char *ciphers;
 	const char *ecdh_curve;
 	const char *dhparam;
-	long options;
 } em_ssl_ctx_t;
 
 class SslContext_t
@@ -101,7 +105,7 @@ class SslBox_t
 		SslBox_t (
 				bool is_server,
 				const std::string &snihostname,
-				const em_ssl_ctx_t *context,
+				const SslContext_t *context,
 				const uintptr_t binding);
 		virtual ~SslBox_t();
 
@@ -122,7 +126,7 @@ class SslBox_t
 		void Shutdown();
 
 	protected:
-		SslContext_t *Context;
+		const SslContext_t *Context;
 
 		bool bIsServer;
 		bool bHandshakeCompleted;

@@ -56,6 +56,7 @@ Statics
 *******/
 
 static VALUE EmModule;
+static VALUE EmSslContext;
 static VALUE EmConnection;
 static VALUE EmConnsHash;
 static VALUE EmTimersHash;
@@ -88,6 +89,24 @@ static VALUE Intern_connection_completed;
 static ID Intern_ca_file;
 static ID Intern_ca_path;
 static ID Intern_cert_store;
+
+static ID id_i_cert_store;
+static ID id_i_ca_file;
+static ID id_i_ca_path;
+static ID id_i_verify_mode;
+static ID id_i_cert;
+static ID id_i_key;
+static ID id_i_verify_hostname;
+static ID id_i_private_key_file;
+static ID id_i_private_key_pass;
+static ID id_i_cert_chain_file;
+
+static ID id_i_max_proto_version;
+static ID id_i_min_proto_version;
+static ID id_i_options;
+static ID id_i_ciphers;
+static ID id_i_ecdh_curve;;
+static ID id_i_dhparam;;
 
 static VALUE rb_cProcessStatus;
 
@@ -383,12 +402,37 @@ static VALUE t_start_tls (VALUE self UNUSED, VALUE signature)
  extract_ssl_context_struct
  **************************/
 
-static em_ssl_ctx_t extract_ssl_context_struct (VALUE obj) {
-	em_ssl_ctx_t ctx;
-	if (!RB_TYPE_P(obj, T_STRUCT)) {
-		rb_raise(rb_eTypeError, "invalid EM SSL context");
+#define CTX_COPY_LONG(name) \
+	ctx->name = RB_NUM2LONG(rb_ivar_get(obj, id_i_##name)); while (0)
+#define CTX_COPY_INT(name) \
+	ctx->name = RB_NUM2INT(rb_ivar_get(obj, id_i_##name)); while (0)
+#define CTX_COPY_CStr(name) do {\
+	VALUE str = rb_ivar_get(obj, id_i_##name); \
+	ctx->name = NIL_P(str) ? NULL : StringValueCStr(str); \
+} while (0)
+
+static void extract_ssl_context_struct (VALUE obj, em_ssl_ctx_t *ctx) {
+	if (!rb_obj_is_kind_of(obj, EmSslContext)) {
+		rb_raise(rb_eTypeError, "Not an EventMachine::SSL::Context");
 	}
-	return ctx;
+	CTX_COPY_LONG(options);
+	CTX_COPY_LONG(min_proto_version);
+	CTX_COPY_LONG(max_proto_version);
+
+	CTX_COPY_CStr(ca_file);
+	CTX_COPY_CStr(ca_path);
+
+	ctx->cert_store = RTEST(rb_ivar_get(obj, id_i_cert_store));
+
+	CTX_COPY_CStr(key);
+	CTX_COPY_CStr(private_key_file);
+	CTX_COPY_CStr(private_key_pass);
+	CTX_COPY_CStr(cert_chain_file);
+	CTX_COPY_CStr(ciphers);
+	CTX_COPY_CStr(ecdh_curve);
+	CTX_COPY_CStr(dhparam);
+
+	const char *dhparam;
 }
 
 /***************
@@ -400,15 +444,9 @@ static VALUE t_set_tls_parms(
 		VALUE signature,
 		VALUE snihostname,
 		VALUE context) {
-	/* set_tls_parms takes a series of positional arguments for specifying such
-	 * things as private keys and certificate chains.  However, most SSL_CTX
-	 * parameters should be moved into context.  ALL of these parameters are
-	 * optional, except for context, and can be specified as empty or NULL
-	 * strings.
-	 */
-	evma_set_tls_parms(NUM2BSIG(signature),
-			StringValueCStr(snihostname),
-			extract_ssl_context_struct(context));
+	em_ssl_ctx_t ctx;
+	extract_ssl_context_struct(context, &ctx);
+	evma_set_tls_parms(NUM2BSIG(signature), StringValueCStr(snihostname), ctx);
 	return Qnil;
 }
 
@@ -1511,11 +1549,35 @@ extern "C" void Init_rubyeventmachine()
 	Intern_ca_path    = rb_intern("ca_path");
 	Intern_cert_store = rb_intern("cert_store");
 
+#define DefIVarID(name) do \
+    id_i_##name = rb_intern_const("@"#name); while (0)
+
+    DefIVarID(options);
+    DefIVarID(max_proto_version);
+    DefIVarID(min_proto_version);
+
+    DefIVarID(cert_store);
+    DefIVarID(ca_file);
+    DefIVarID(ca_path);
+    DefIVarID(verify_mode);
+    DefIVarID(cert);
+    DefIVarID(key);
+    DefIVarID(verify_hostname);
+    DefIVarID(private_key_file);
+    DefIVarID(private_key_pass);
+    DefIVarID(cert_chain_file);
+    DefIVarID(ciphers);
+    DefIVarID(ecdh_curve);
+    DefIVarID(dhparam);
+
 	// INCOMPLETE, we need to define class Connections inside module EventMachine
 	// run_machine and run_machine_without_threads are now identical.
 	// Must deprecate the without_threads variant.
 	EmModule = rb_define_module ("EventMachine");
 	EmConnection = rb_define_class_under (EmModule, "Connection", rb_cObject);
+
+	VALUE EmSsl = rb_define_module_under (EmModule, "SSL");
+	EmSslContext = rb_define_class_under (EmSsl, "Context", rb_cObject);
 
 	rb_define_class_under (EmModule, "NoHandlerForAcceptedConnection", rb_eRuntimeError);
 	EM_eConnectionError = rb_define_class_under (EmModule, "ConnectionError", rb_eRuntimeError);

@@ -260,10 +260,10 @@ class ConnectionDescriptor: public EventableDescriptor
 		int OutboundDataSize;
 
 		#ifdef WITH_SSL
-		SslContext_t *SslContext;
+		SslContext_t *SslContext; // TODO: move into ruby, ivar or local var
+		std::string SniHostName;
 		SslBox_t *SslBox;
 		bool bHandshakeSignaled;
-		std::string SniHostName;
 		bool bSslPeerAccepted;
 		#endif
 

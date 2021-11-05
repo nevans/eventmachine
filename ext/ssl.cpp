@@ -175,6 +175,69 @@ static void InitializeDefaultX509Store()
 	X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK_ALL);
 }
 
+
+/************************************
+ * Copied/adapted from stdlib openssl/ssl.c
+ ************************************/
+
+/*
+ * Sets various OpenSSL options.
+ */
+static void
+em_ossl_sslctx_set_options(SSL_CTX *ctx, unsigned long options)
+{
+    SSL_CTX_clear_options(ctx, SSL_CTX_get_options(ctx));
+	SSL_CTX_set_options(ctx, NUM2ULONG(options));
+}
+
+#define numberof(ary) (int)(sizeof(ary)/sizeof((ary)[0]))
+
+/*
+ * call-seq:
+ *    ctx.set_minmax_proto_version(min, max) -> nil
+ *
+ * Sets the minimum and maximum supported protocol versions. See #min_version=
+ * and #max_version=.
+ */
+	static void
+em_ossl_sslctx_set_minmax_proto_version(SSL_CTX *ctx, int min, int max)
+{
+#ifdef HAVE_SSL_CTX_SET_MIN_PROTO_VERSION
+	if (!SSL_CTX_set_min_proto_version(ctx, min))
+		throw std::runtime_error ("SSL_CTX_set_min_proto_version");
+	if (!SSL_CTX_set_max_proto_version(ctx, max))
+		throw std::runtime_error ("SSL_CTX_set_max_proto_version");
+#else
+	{
+		unsigned long sum = 0, opts = 0;
+		int i;
+		static const struct {
+			int ver;
+			unsigned long opts;
+		} options_map[] = {
+			{ SSL2_VERSION, SSL_OP_NO_SSLv2 },
+			{ SSL3_VERSION, SSL_OP_NO_SSLv3 },
+			{ TLS1_VERSION, SSL_OP_NO_TLSv1 },
+			{ TLS1_1_VERSION, SSL_OP_NO_TLSv1_1 },
+			{ TLS1_2_VERSION, SSL_OP_NO_TLSv1_2 },
+# if defined(TLS1_3_VERSION)
+			{ TLS1_3_VERSION, SSL_OP_NO_TLSv1_3 },
+# endif
+		};
+
+		for (i = 0; i < numberof(options_map); i++) {
+			sum |= options_map[i].opts;
+			if ((min && min > options_map[i].ver) ||
+					(max && max < options_map[i].ver)) {
+				opts |= options_map[i].opts;
+			}
+		}
+		SSL_CTX_clear_options(ctx, sum);
+		SSL_CTX_set_options(ctx, opts);
+	}
+#endif
+}
+
 /**************************
 SslContext_t::SslContext_t
 **************************/
@@ -209,47 +272,27 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 	if (!pCtx)
 		throw std::runtime_error ("no SSL context");
 
-	SSL_CTX_set_options (pCtx, SSL_OP_ALL);
-
-	#ifdef SSL_CTRL_CLEAR_OPTIONS
-	SSL_CTX_clear_options (pCtx, SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3|SSL_OP_NO_TLSv1);
-	# ifdef SSL_OP_NO_TLSv1_1
-	SSL_CTX_clear_options (pCtx, SSL_OP_NO_TLSv1_1);
-	# endif
-	# ifdef SSL_OP_NO_TLSv1_2
-	SSL_CTX_clear_options (pCtx, SSL_OP_NO_TLSv1_2);
-	# endif
-	#endif
-
-	if (!(ssl_version & EM_PROTO_SSLv2))
-		SSL_CTX_set_options (pCtx, SSL_OP_NO_SSLv2);
-
-	if (!(ssl_version & EM_PROTO_SSLv3))
-		SSL_CTX_set_options (pCtx, SSL_OP_NO_SSLv3);
-
-	if (!(ssl_version & EM_PROTO_TLSv1))
-		SSL_CTX_set_options (pCtx, SSL_OP_NO_TLSv1);
-
-	#ifdef SSL_OP_NO_TLSv1_1
-	if (!(ssl_version & EM_PROTO_TLSv1_1))
-		SSL_CTX_set_options (pCtx, SSL_OP_NO_TLSv1_1);
-	#endif
-
-	#ifdef SSL_OP_NO_TLSv1_2
-	if (!(ssl_version & EM_PROTO_TLSv1_2))
-		SSL_CTX_set_options (pCtx, SSL_OP_NO_TLSv1_2);
-	#endif
-
-	#ifdef SSL_OP_NO_TLSv1_3
-	if (!(ssl_version & EM_PROTO_TLSv1_3))
-		SSL_CTX_set_options (pCtx, SSL_OP_NO_TLSv1_3);
-	#endif
+	em_ossl_sslctx_set_options(pCtx, ctx->options);
+	em_ossl_sslctx_set_minmax_proto_version(
+			pCtx,
+			ctx->min_proto_version,
+			ctx->max_proto_version);
 
 	#ifdef SSL_MODE_RELEASE_BUFFERS
 	SSL_CTX_set_mode (pCtx, SSL_MODE_RELEASE_BUFFERS);
 	#endif
 
 	int e;
+	std::string certchainfile = ctx->cert_chain_file;
+	std::string cert          = ctx->cert;
+	std::string key           = ctx->key;
+	std::string private_key_file = ctx->private_key_file;
+	std::string private_key_pass = ctx->private_key_pass;
+
+	std::string dhparam       = ctx->dhparam;
+	std::string ecdh_curve    = ctx->ecdh_curve;
+	std::string ciphers       = ctx->ciphers;
+
 	// As indicated in man(3) ssl_ctx_use_privatekey_file
 	// To change a certificate, private key pair the new certificate needs to be set with
 	// SSL_use_certificate() or SSL_CTX_use_certificate() before setting the private key with SSL_CTX_use_PrivateKey() or SSL_use_PrivateKey().
@@ -269,19 +312,19 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 		if (e <= 0) ERR_print_errors_fp(stderr);
 		assert (e > 0);
 	}
-	if (privkeyfile.length() > 0) {
-		if (privkeypass.length() > 0) {
-			SSL_CTX_set_default_passwd_cb_userdata(pCtx, const_cast<char*>(privkeypass.c_str()));
+	if (private_key_file.length() > 0) {
+		if (private_key_pass.length() > 0) {
+			SSL_CTX_set_default_passwd_cb_userdata(pCtx, const_cast<char*>(private_key_pass.c_str()));
 		}
-		e = SSL_CTX_use_PrivateKey_file (pCtx, privkeyfile.c_str(), SSL_FILETYPE_PEM);
+		e = SSL_CTX_use_PrivateKey_file (pCtx, private_key_file.c_str(), SSL_FILETYPE_PEM);
 		if (e <= 0) ERR_print_errors_fp(stderr);
 		assert (e > 0);
 	}
-	if (privkey.length() > 0) {
-		BIO *bio = BIO_new_mem_buf (privkey.c_str(), -1);
+	if (key.length() > 0) {
+		BIO *bio = BIO_new_mem_buf (key.c_str(), -1);
 		assert(bio);
 		BIO_set_mem_eof_return(bio, 0);
-		EVP_PKEY * clientPrivateKey = PEM_read_bio_PrivateKey (bio, NULL, NULL, const_cast<char*>(privkeypass.c_str()));
+		EVP_PKEY * clientPrivateKey = PEM_read_bio_PrivateKey (bio, NULL, NULL, const_cast<char*>(private_key_pass.c_str()));
 		e = SSL_CTX_use_PrivateKey (pCtx, clientPrivateKey);
 		EVP_PKEY_free(clientPrivateKey);
 		BIO_free (bio);
@@ -307,7 +350,7 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 			if (e <= 0) ERR_print_errors_fp(stderr);
 			assert (e > 0);
 		}
-		if (privkeyfile.length() == 0 && privkey.length() == 0) {
+		if (private_key_file.length() == 0 && key.length() == 0) {
 			// ensure default private material is configured for ssl
 			e = SSL_CTX_use_PrivateKey (pCtx, DefaultPrivateKey);
 			if (e <= 0) ERR_print_errors_fp(stderr);
@@ -369,8 +412,8 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 		}
 	}
 
-	if (cipherlist.length() > 0)
-		SSL_CTX_set_cipher_list (pCtx, cipherlist.c_str());
+	if (ciphers.length() > 0)
+		SSL_CTX_set_cipher_list (pCtx, ciphers.c_str());
 	else
 		SSL_CTX_set_cipher_list (pCtx, "ALL:!ADH:!LOW:!EXP:!DES-CBC3-SHA:@STRENGTH");
 
@@ -405,21 +448,16 @@ SslBox_t::SslBox_t
 SslBox_t::SslBox_t (
 		bool is_server,
 		const std::string &snihostname,
-		const char *sni_hostname,
-		const em_ssl_ctx_t *ctx,
+		const SslContext_t *ctx,
 		const uintptr_t binding):
 	bIsServer (is_server),
 	bHandshakeCompleted (false),
-	bFailIfNoPeerCert (fail_if_no_peer_cert),
+	Context (ctx),
 	pSSL (NULL),
 	pbioRead (NULL),
 	pbioWrite (NULL)
 {
-	/* TODO someday: make it possible to re-use SSL contexts so we don't have to create
-	 * a new one every time we come here.
-	 */
-
-	Context = new SslContext_t (bIsServer, ctx);
+	/* TODO: allow re-use of SSL_CTX from ruby */
 	assert (Context);
 
 	pbioRead = BIO_new (BIO_s_mem());
@@ -440,12 +478,7 @@ SslBox_t::SslBox_t (
 	// Store a pointer to the binding signature in the SSL object so we can retrieve it later
 	SSL_set_ex_data(pSSL, 0, (void*) binding);
 
-	if (bVerifyPeer) {
-		int mode = SSL_VERIFY_PEER | SSL_VERIFY_CLIENT_ONCE;
-		if (bFailIfNoPeerCert)
-			mode = mode | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
-		SSL_set_verify(pSSL, mode, ssl_verify_wrapper);
-	}
+	/* TODO: move verify mode and callback into SSL_CTX */
 
 	if (!bIsServer) {
 		int e = SSL_connect (pSSL);
