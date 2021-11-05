@@ -333,132 +333,28 @@ module EventMachine
       !(parm.nil? || parm.empty?)
     end
 
-    # This method takes a series of positional arguments for specifying such
-    # things as private keys and certificate chains. It's expected that the
-    # parameter list will grow as we add more supported features. ALL of these
-    # parameters are optional, and can be specified as empty or nil strings.
+    # This method takes an {EventMachine::SSL::Context} and any other options
+    # which apply not to the SSL_CTX but to the SSL connection, e.g. SNI
+    # hostname.  It's been simplified from earlier versions by encapsulating
+    # SSL_CTX params into their own object.
+    #
     # @private
-    def set_tls_parms signature, priv_key_path, priv_key, priv_key_pass, cert_chain_path, cert, verify_peer, fail_if_no_peer_cert, sni_hostname, cipher_list, ecdh_curve, dhparam, protocols_bitmask
-      bitmask = protocols_bitmask
-      ssl_options = OpenSSL::SSL::OP_ALL
-      if defined?(OpenSSL::SSL::OP_NO_SSLv2)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_SSLv2
-        ssl_options |= OpenSSL::SSL::OP_NO_SSLv2 if EM_PROTO_SSLv2 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_SSLv3)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_SSLv3
-        ssl_options |= OpenSSL::SSL::OP_NO_SSLv3 if EM_PROTO_SSLv3 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1 if EM_PROTO_TLSv1 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1_1)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_1
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_1 if EM_PROTO_TLSv1_1 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1_2)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_2
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_2 if EM_PROTO_TLSv1_2 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1_3)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_3
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_3 if EM_PROTO_TLSv1_3 & bitmask == 0
-      end
+    def set_tls_parms(signature, context, sni_hostname = nil)
       @tls_parms ||= {}
-      @tls_parms[signature] = {
-        :verify_peer => verify_peer,
-        :fail_if_no_peer_cert => fail_if_no_peer_cert,
-        :ssl_options => ssl_options
-      }
-      @tls_parms[signature][:priv_key] = File.binread(priv_key_path) if tls_parm_set?(priv_key_path)
-      @tls_parms[signature][:priv_key] = priv_key if tls_parm_set?(priv_key)
-      @tls_parms[signature][:priv_key_pass] = priv_key_pass if tls_parm_set?(priv_key_pass)
-      @tls_parms[signature][:cert_chain] = File.binread(cert_chain_path) if tls_parm_set?(cert_chain_path)
-      @tls_parms[signature][:cert_chain] = cert if tls_parm_set?(cert)
+      @tls_parms[signature] ||= {}
       @tls_parms[signature][:sni_hostname] = sni_hostname if tls_parm_set?(sni_hostname)
-      @tls_parms[signature][:cipher_list] = cipher_list.gsub(/,\s*/, ':') if tls_parm_set?(cipher_list)
-      @tls_parms[signature][:dhparam] = File.read(dhparam) if tls_parm_set?(dhparam)
-      @tls_parms[signature][:ecdh_curve] = ecdh_curve if tls_parm_set?(ecdh_curve)
+      @tls_parms[signature][:context] = context or raise ArgumentError, "missing context"
     end
 
-    PEM_CERTIFICATE = /
-      ^-----BEGIN CERTIFICATE-----\n
-      .*?\n
-      -----END CERTIFICATE-----\n
-    /mx
-    private_constant :PEM_CERTIFICATE
-
     def start_tls signature
-      selectable = Reactor.instance.get_selectable(signature) or raise "unknown io selectable for start_tls"
-      tls_parms = @tls_parms[signature]
-      ctx = OpenSSL::SSL::SSLContext.new
-      ctx.options = tls_parms[:ssl_options]
-      ctx.cert_store = OpenSSL::X509::Store.new
-      ctx.cert_store.set_default_paths
-      cert, *extra_chain_cert =
-        if (cert_chain = tls_parms[:cert_chain])
-          if OpenSSL::X509::Certificate.respond_to?(:load)
-            OpenSSL::X509::Certificate.load(cert_chain)
-          elsif cert_chain[PEM_CERTIFICATE]
-            # compatibility with openssl gem < 3.0 (ruby < 2.6)
-            cert_chain.scan(PEM_CERTIFICATE)
-              .map {|pem| OpenSSL::X509::Certificate.new(pem) }
-          else
-            [OpenSSL::X509::Certificate.new(cert_chain)]
-          end
-        elsif selectable.is_server
-          [DefaultCertificate.cert]
-        end
-      key =
-        if tls_parms[:priv_key]
-          OpenSSL::PKey::RSA.new(tls_parms[:priv_key], tls_parms[:priv_key_pass])
-        elsif selectable.is_server
-          DefaultCertificate.key
-        end
-      ctx.cert, ctx.key, ctx.extra_chain_cert = cert, key, extra_chain_cert
-      if tls_parms[:verify_peer]
-        ctx.verify_mode =
-          OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_CLIENT_ONCE
-        if tls_parms[:fail_if_no_peer_cert]
-          ctx.verify_mode |= OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
-        end
-        ctx.verify_callback = ->(preverify_ok, store_ctx) {
-          EventMachine::event_callback signature, SslVerify, [preverify_ok, store_ctx]
-        }
-      else
-        ctx.verify_mode = OpenSSL::SSL::VERIFY_NONE
-      end
-      ctx.servername_cb = Proc.new do |_, server_name|
-        tls_parms[:server_name] = server_name
-        nil
-      end
-      ctx.ciphers = tls_parms[:cipher_list] if tls_parms[:cipher_list]
-      if selectable.is_server
-        dhparam = if tls_parms[:dhparam]
-          OpenSSL::PKey::DH.new(tls_parms[:dhparam])
-        else
-          DH_ffdhe2048
-        end
-        if ctx.respond_to?(:tmp_dh=)
-          # openssl gem 3.1+ (shipped with ruby 3.2, compatible with ruby 2.6+)
-          ctx.tmp_dh = dhparam
-        else
-          ctx.tmp_dh_callback = proc { dhparam }
-        end
-        if tls_parms[:ecdh_curve]
-          ctx.ecdh_curves = tls_parms[:ecdh_curve]
-        end
-      end
-      begin
-        ctx.freeze
-      rescue OpenSSL::SSL::SSLError => err
-        if err.message.include?("SSL_CTX_use_PrivateKey") ||
-            err.message.include?("key values mismatch")
-          raise InvalidPrivateKey, err.message
-        end
-        raise
-      end
+      selectable = Reactor.instance.get_selectable(signature) or
+        raise "unknown io selectable for start_tls"
+      tls_parms = @tls_parms.fetch(signature) {
+        raise "call EM.set_tls_parms(sig) before calling EM.start_tls(sig)"
+      }
+
+      ctx = tls_parms.fetch(:context)
+      ctx = ctx.to_stdlib_ssl_ctx(server: selectable.is_server)
 
       ssl_io = OpenSSL::SSL::SSLSocket.new(selectable, ctx)
       ssl_io.sync_close = true
@@ -1487,6 +1383,24 @@ module EventMachine
     def send_data data
       send_datagram data, @return_address
     end
+  end
+end
+
+module EventMachine
+  module SSL
+
+    # adapted to work with OpenSSL::SSL::SSLContext
+
+    class Context < OpenSSL::SSL::SSLContext
+
+      def setup
+        return if frozen?
+        # ...
+        super
+      end
+
+    end
+
   end
 end
 
