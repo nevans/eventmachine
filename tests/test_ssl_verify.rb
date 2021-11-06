@@ -25,7 +25,7 @@ class TestSSLVerify < Test::Unit::TestCase
     client_server Client, Server, server: server
 
     assert_empty Server.preverify_ok # no client cert sent
-    assert_empty Client.preverify_ok # no server cert sent
+    assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
 
     refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
     refute Server.handshake_completed?
@@ -41,8 +41,8 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # OpenSSL can't verify because its x509_store isn't configured
     # but after we insist the chain certs are okay, it's happy with the peer.
-    assert_equal Server.preverify_ok, [false, false, true]
-    assert_empty Client.preverify_ok # no server cert sent
+    assert_equal [false, false, true], Server.preverify_ok
+    assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
 
     assert_equal CERT_FROM_FILE, Server.cert
     assert Client.handshake_completed?
@@ -59,7 +59,7 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # OpenSSL can't verify because its x509_store isn't configured
     # but after we insist the chain certs are okay, it's happy with the peer.
-    assert_equal Client.preverify_ok, [false, false, true]
+    assert_equal [false, false, true], Client.preverify_ok
     assert_empty Server.preverify_ok # no client cert sent
 
     assert_equal CERT_FROM_FILE, Client.cert
@@ -77,8 +77,8 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # OpenSSL can't verify because its X509_STORE isn't configured
     # but after we insist the chain certs are okay, it's happy with the peer.
-    assert_equal Server.preverify_ok, [false, false, true]
-    assert_empty Client.preverify_ok # no server cert sent
+    assert_equal [false, false, true], Server.preverify_ok
+    assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
 
     assert Client.handshake_completed?
     assert Server.handshake_completed?
@@ -95,7 +95,7 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # OpenSSL can't verify because its X509_STORE isn't configured
     # but after we insist the chain certs are okay, it's happy with the peer.
-    assert_equal Client.preverify_ok, [false, false, true]
+    assert_equal [false, false, true], Client.preverify_ok
     assert_empty Server.preverify_ok # no client cert sent
 
     assert Client.handshake_completed?
@@ -113,8 +113,8 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # OpenSSL can't verify because its X509_STORE isn't configured
     # but it gives up after the first because we agreed with it.
-    assert_equal Server.preverify_ok, [false]
-    assert_empty Client.preverify_ok # no server cert sent
+    assert_equal [false], Server.preverify_ok
+    assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
 
     assert_equal CERT_FROM_FILE, Server.cert
     refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
@@ -131,7 +131,7 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # OpenSSL can't verify because its X509_STORE isn't configured
     # but it gives up after the first because we agreed with it.
-    assert_equal Client.preverify_ok, [false]
+    assert_equal [false], Client.preverify_ok
     assert_empty Server.preverify_ok # no client cert sent
 
     refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
@@ -150,9 +150,9 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # Old server handlers can continue in blissful ignorance of OpenSSL's
     # diagnosis, just as they always have....
-    assert_equal Server.preverify_ok, [:a_complete_mystery] * 3
+    assert_equal [:a_complete_mystery] * 3, Server.preverify_ok
+    assert_equal CERT_FROM_FILE,            Server.cert
 
-    assert_equal CERT_FROM_FILE, Server.cert
     assert Client.handshake_completed?
     assert Server.handshake_completed?
   end
@@ -168,7 +168,7 @@ class TestSSLVerify < Test::Unit::TestCase
 
     # Old client handlers can continue in blissful ignorance of OpenSSL's
     # diagnosis, just as they always have....
-    assert_equal Client.preverify_ok, [:a_complete_mystery] * 3
+    assert_equal [:a_complete_mystery] * 3, Client.preverify_ok
     assert_empty Server.preverify_ok # no client cert sent
 
     assert_equal CERT_FROM_FILE, Client.cert

@@ -125,13 +125,26 @@ module EventMachine
     def ssl_handshake_completed
     end
 
-    # Called by EventMachine when :verify_peer => true has been passed to {#start_tls}.
-    # It will be called with each certificate in the certificate chain provided by the remote peer.
+    # Called by EventMachine when `verify_peer: true` has been passed to
+    # {#start_tls}.  It will be called with each certificate in the certificate
+    # chain provided by the remote peer.  The certificate chain is checked
+    # starting with the deepest nesting level (the root CA certificate) and
+    # worked upward to the peer's certificate.
     #
-    # The cert will be passed as a String in PEM format, the same as in {#get_peer_cert}. It is up to user defined
-    # code to perform a check on the certificates. The return value from this callback is used to accept or deny the peer.
-    # A return value that is not nil or false triggers acceptance. If the peer is not accepted, the connection
-    # will be subsequently closed.
+    # @param cert [String] The X509 certificate as a String in PEM format, the
+    #   same as in {#get_peer_cert}.
+    #
+    # @param preverify_ok [Boolean] whether the verification of the certificate
+    #   in question was passed by OpenSSL's built-in procedure
+    #
+    # @return [Boolean] whether to accept or deny the peer.  A return value that
+    #   is not nil or false triggers acceptance. If the peer is not accepted,
+    #   the connection will be subsequently closed.
+    #
+    # It is strongly recommended to always simply return `preverify_ok` and only
+    # use this callback for logging and diagnostics.  If OpenSSL isn't verifying
+    # a certificate, you should first try setting {SSL::Context#ca_path} or
+    # {SSL::Context#ca_file}, ensuring SNI {hostname} was set, etc.
     #
     # @example This server always accepts all peers
     #
@@ -140,7 +153,7 @@ module EventMachine
     #       start_tls(:verify_peer => true)
     #     end
     #
-    #     def ssl_verify_peer(cert)
+    #     def ssl_verify_peer(cert, preverify_ok)
     #       true
     #     end
     #
@@ -170,7 +183,8 @@ module EventMachine
     #
     # @see #start_tls
     # @see #ssl_handshake_completed
-    def ssl_verify_peer(cert)
+    def ssl_verify_peer(cert, preverify_ok)
+      preverify_ok
     end
 
     # called by the framework whenever a connection (either a server or client connection) is closed.
@@ -385,12 +399,16 @@ module EventMachine
     #   When no explicit context is given, a new context will be created which
     #   uses OpenSSL::SSL::SSLContext::DEFAULT_PARAMS merged with any other
     #   options that are sent to {#start_tls}.  This is not identical to earlier
-    #   EventMachine behavior, but it should usually be compatible or more
-    #   secure.
+    #   EventMachine behavior
     #
     # @param [Hash] args  Extra options will be sent to a newly created
     #   {EM::SSL::Context}.  If :context is provided, any extra options will
     #   raise an {ArgumentError}.
+    #
+    #   @note The default TLS params have been changed to behave more like
+    #   stdlib's "OpenSSL::SSL::SSLContext#set_params".  Client settings should
+    #   generally be compatible or more secure, but servers may need to add
+    #   "verify_peer: false".
     #
     #   @see EM::SSL::Context
     #
@@ -452,11 +470,15 @@ module EventMachine
       end
       context.setup
 
-      EventMachine::set_tls_parms(
-        @signature,
-        hostname || '',
-        context
-      )
+      begin
+        EventMachine::set_tls_parms(@signature, hostname || '', context)
+      rescue RuntimeError => ex
+        case ex
+        when /X509_check_private_key/
+          raise InvalidPrivateKey, ex.message
+        end
+      end
+
       EventMachine::start_tls @signature
     end
 

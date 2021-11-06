@@ -455,8 +455,11 @@ module EventMachine
         self.ciphers = ciphers
       end
 
-      # @!attribute [rw] verify_peer
-      # @return [Boolean] if {VERIFY_PEER} is set on {#verify_mode}
+      # Sets (or unsets) both {VERIFY_PEER} and {VERIFY_CLIENT_ONCE} set on
+      # {#verify_mode}.
+      #
+      # @note {verify_peer?} only checks for {VERIFY_PEER} and ignores
+      #   {VERIFY_CLIENT_ONCE}.
       #
       # If true, the {#ssl_verify_peer} callback on the {Connection} object is
       # called with each certificate in the certificate chain provided by the
@@ -465,8 +468,10 @@ module EventMachine
         return if bool.nil?
         if bool
           self.verify_mode |= OpenSSL::SSL::VERIFY_PEER
+          self.verify_mode |= OpenSSL::SSL::VERIFY_CLIENT_ONCE
         else
           self.verify_mode &= ~OpenSSL::SSL::VERIFY_PEER
+          self.verify_mode &= ~OpenSSL::SSL::VERIFY_CLIENT_ONCE
         end
         bool
       end

@@ -269,9 +269,23 @@ em_ossl_sslctx_set_ca_file_and_path(
 #endif
 }
 
+static void
+em_ossl_throw_errors()
+{
+	BIO *bio_err = BIO_new(BIO_s_mem());
+	std::string error_msg;
+	if (bio_err != NULL) {
+		ERR_print_errors(bio_err);
+		char* buf;
+		long size = BIO_get_mem_data(bio_err, &buf);
+		error_msg.assign(buf,size);
+		BIO_free(bio_err);
+	}
+	throw std::runtime_error (error_msg);
+}
+
 // n.b: cstr is evaluated twice. just a coalescing NULL check
 #define CPPSAFE_CSTR(cstr) cstr ? cstr : ""
-
 
 static void
 em_ossl_sslctx_use_certificate(SSL_CTX *pCtx, const em_ssl_ctx_t *opts)
@@ -318,19 +332,7 @@ em_ossl_sslctx_use_certificate(SSL_CTX *pCtx, const em_ssl_ctx_t *opts)
 		e = SSL_CTX_use_PrivateKey (pCtx, clientPrivateKey);
 		EVP_PKEY_free(clientPrivateKey);
 		BIO_free (bio);
-		if (e <= 0) {
-			BIO *bio_err = BIO_new(BIO_s_mem());
-			std::string error_msg;
-			if (bio_err != NULL) {
-				ERR_print_errors(bio_err);
-				char* buf;
-				long size = BIO_get_mem_data(bio_err, &buf);
-				error_msg.assign(buf,size);
-				BIO_free(bio_err);
-			}
-			throw std::runtime_error (error_msg);
-		}
-		assert (e > 0);
+		if (e <= 0) em_ossl_throw_errors();
 	}
 }
 
@@ -365,7 +367,6 @@ em_ossl_sslctx_set_cipher_list(SSL_CTX *pCtx, const char *ciphers)
 	else
 		SSL_CTX_set_cipher_list (pCtx, "ALL:!ADH:!LOW:!EXP:!DES-CBC3-SHA:@STRENGTH");
 }
-
 
 /**************************
 SslContext_t::SslContext_t
@@ -406,6 +407,8 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 	SSL_CTX_set_mode (pCtx, SSL_MODE_RELEASE_BUFFERS);
 	#endif
 
+	bVerifyHostname = ctx->verify_hostname;
+
 	em_ossl_sslctx_set_options(pCtx, ctx->options);
 	em_ossl_sslctx_set_minmax_proto_version(
 			pCtx,
@@ -416,6 +419,11 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 			ctx->cert_store ? bDefaultX509Store : NULL);
 	em_ossl_sslctx_set_ca_file_and_path(pCtx, ctx->ca_file, ctx->ca_path);
 	em_ossl_sslctx_use_certificate(pCtx, ctx);
+
+	if (ctx->verify_mode != SSL_VERIFY_NONE) {
+		// Backward compatibility: only SSL_set_verify if not VERIFY_NONE
+		SSL_CTX_set_verify(pCtx, ctx->verify_mode, em_ossl_ssl_verify_callback);
+	}
 
 	int e;
 
@@ -789,20 +797,19 @@ const char *SslBox_t::GetSNIHostname()
 	return NULL;
 }
 
-/******************
-ssl_verify_wrapper
-*******************/
+/******************************
+ * em_ossl_ssl_verify_callback
+ ******************************/
 
-extern "C" int ssl_verify_wrapper(int preverify_ok UNUSED, X509_STORE_CTX *ctx)
+extern "C" int em_ossl_ssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
 {
-	uintptr_t binding;
-	X509 *cert;
+	X509 *cert = X509_STORE_CTX_get_current_cert(ctx);
+	BIO *out = BIO_new(BIO_s_mem());
 	SSL *ssl;
+	uintptr_t binding;
 	BUF_MEM *buf;
-	BIO *out;
 	bool verified;
 
-	cert = X509_STORE_CTX_get_current_cert(ctx);
 	ssl = (SSL *)X509_STORE_CTX_get_ex_data(
 			ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
 	binding = (uintptr_t)SSL_get_ex_data(ssl, 0);
@@ -812,6 +819,7 @@ extern "C" int ssl_verify_wrapper(int preverify_ok UNUSED, X509_STORE_CTX *ctx)
 	BIO_write(out, "\0", 1);
 	BIO_get_mem_ptr(out, &buf);
 
+	X509_NAME_print_ex_fp(stderr, X509_get_subject_name(cert), 0, 0);
 	ConnectionDescriptor *cd = dynamic_cast<ConnectionDescriptor *>(
 			Bindable_t::GetObject(binding));
 	verified = cd->VerifySslPeer(buf->data, preverify_ok == 0 ? false : true);

@@ -86,10 +86,6 @@ static VALUE Intern_proxy_target_unbound;
 static VALUE Intern_proxy_completed;
 static VALUE Intern_connection_completed;
 
-static ID Intern_ca_file;
-static ID Intern_ca_path;
-static ID Intern_cert_store;
-
 static ID id_i_cert_store;
 static ID id_i_ca_file;
 static ID id_i_ca_path;
@@ -455,15 +451,19 @@ extract_ssl_context_struct (VALUE obj, em_ssl_ctx_t *ctx) {
 	EM_SSL_CTX_COPY_IVAR(RB_NUM2INT,   min_proto_version, 0);
 	EM_SSL_CTX_COPY_IVAR(RB_NUM2INT,   max_proto_version, 0);
 	EM_SSL_CTX_COPY_IVAR(RB_NUM2ULONG, options,           0);
-	EM_SSL_CTX_COPY_IVAR(RB_TEST,      cert_store,        true);
+	EM_SSL_CTX_COPY_IVAR(RB_NUM2INT,   verify_mode,       SSL_VERIFY_NONE);
+	EM_SSL_CTX_COPY_IVAR(RB_TEST,      verify_hostname,   false);
 
+	EM_SSL_CTX_COPY_IVAR(RB_TEST,      cert_store,        true);
 	EM_SSL_CTX_COPY_IVAR_STR(ca_file);
 	EM_SSL_CTX_COPY_IVAR_STR(ca_path);
+
 	EM_SSL_CTX_COPY_IVAR_STR(cert);
 	EM_SSL_CTX_COPY_IVAR_STR(cert_chain_file);
 	EM_SSL_CTX_COPY_IVAR_STR(key);
 	EM_SSL_CTX_COPY_IVAR_STR(private_key_file);
 	EM_SSL_CTX_COPY_IVAR_STR(private_key_pass);
+
 	EM_SSL_CTX_COPY_IVAR_STR(ecdh_curve);
 	EM_SSL_CTX_COPY_IVAR_STR(dhparam);
 
@@ -495,9 +495,10 @@ static VALUE t_set_tls_parms(
 		VALUE context) {
 	VALUE gc_guard = Qundef;
 	try {
+		char *c_hostname = StringValueCStr(snihostname);
 		em_ssl_ctx_t ctx;
 		gc_guard = extract_ssl_context_struct(context, &ctx);
-		evma_set_tls_parms(NUM2BSIG(signature), StringValueCStr(snihostname), ctx);
+		evma_set_tls_parms(NUM2BSIG(signature), c_hostname, ctx);
 	} catch (const std::runtime_error& e) {
 		rb_raise (rb_eRuntimeError,
 				"EventMachine.set_tls_parms: %s", e.what());
@@ -1601,30 +1602,27 @@ extern "C" void Init_rubyeventmachine()
 	Intern_proxy_completed = rb_intern ("proxy_completed");
 	Intern_connection_completed = rb_intern ("connection_completed");
 
-	Intern_ca_file    = rb_intern("ca_file");
-	Intern_ca_path    = rb_intern("ca_path");
-	Intern_cert_store = rb_intern("cert_store");
-
 #define DefIVarID(name) do \
-    id_i_##name = rb_intern_const("@"#name); while (0)
+	id_i_##name = rb_intern_const("@"#name); while (0)
 
-    DefIVarID(options);
-    DefIVarID(max_proto_version);
-    DefIVarID(min_proto_version);
+	DefIVarID(options);
+	DefIVarID(max_proto_version);
+	DefIVarID(min_proto_version);
 
-    DefIVarID(cert_store);
-    DefIVarID(ca_file);
-    DefIVarID(ca_path);
-    DefIVarID(verify_mode);
-    DefIVarID(cert);
-    DefIVarID(key);
-    DefIVarID(verify_hostname);
-    DefIVarID(private_key_file);
-    DefIVarID(private_key_pass);
-    DefIVarID(cert_chain_file);
-    DefIVarID(ciphers);
-    DefIVarID(ecdh_curve);
-    DefIVarID(dhparam);
+	DefIVarID(cert_store);
+	DefIVarID(ca_file);
+	DefIVarID(ca_path);
+	DefIVarID(verify_mode);
+	DefIVarID(verify_hostname);
+	DefIVarID(cert);
+	DefIVarID(key);
+	DefIVarID(verify_hostname);
+	DefIVarID(private_key_file);
+	DefIVarID(private_key_pass);
+	DefIVarID(cert_chain_file);
+	DefIVarID(ciphers);
+	DefIVarID(ecdh_curve);
+	DefIVarID(dhparam);
 
 	// INCOMPLETE, we need to define class Connections inside module EventMachine
 	// run_machine and run_machine_without_threads are now identical.

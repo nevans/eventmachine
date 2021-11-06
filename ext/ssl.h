@@ -52,6 +52,8 @@ typedef struct em_ssl_ctx {
 	int min_proto_version;
 	int max_proto_version;
 	unsigned long options;
+	int verify_mode;
+	bool verify_hostname;
 
 	/* X509_STORE *cert_store; */
 	bool cert_store;
@@ -81,6 +83,7 @@ class SslContext_t
 
 	private:
 		bool bIsServer;
+		bool bVerifyHostname;
 		SSL_CTX *pCtx;
 
 		EVP_PKEY *PrivateKey;
@@ -136,7 +139,7 @@ class SslBox_t
 		PageList OutboundQ;
 };
 
-extern "C" int ssl_verify_wrapper(int, X509_STORE_CTX*);
+extern "C" int em_ossl_ssl_verify_callback(int, X509_STORE_CTX*);
 
 #endif // WITH_SSL
 
