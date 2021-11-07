@@ -73,7 +73,7 @@ class EventableDescriptor: public Bindable_t
 		virtual bool GetSockname (struct sockaddr*, socklen_t*) = 0;
 		virtual bool GetSubprocessPid (pid_t*) {return false;}
 
-		virtual void SetTlsParms (const char *, const em_ssl_ctx_t *) {}
+		virtual void SetTlsParms (const em_ssl_ctx_t *, const char *) {}
 		virtual void StartTls() {}
 
 		#ifdef WITH_SSL
@@ -214,7 +214,7 @@ class ConnectionDescriptor: public EventableDescriptor
 		// Do we have any data to write? This is used by ShouldDelete.
 		virtual int GetOutboundDataSize() {return OutboundDataSize;}
 
-		virtual void SetTlsParms (const char *, const em_ssl_ctx_t *);
+		virtual void SetTlsParms (const em_ssl_ctx_t *, const char *);
 		virtual void StartTls();
 
 		#ifdef WITH_SSL

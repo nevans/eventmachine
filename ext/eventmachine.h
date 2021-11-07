@@ -83,8 +83,8 @@ extern "C" {
 	const uintptr_t evma_open_keyboard();
 	void evma_set_tls_parms (
 			const uintptr_t binding,
-			const char *sni_hostname,
-			em_ssl_ctx_t context);
+			em_ssl_ctx_t context,
+			const char *sni_hostname);
 	void evma_start_tls (const uintptr_t binding);
 
 	#ifdef WITH_SSL

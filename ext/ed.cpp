@@ -1390,8 +1390,8 @@ ConnectionDescriptor::SetTlsParms
 
 #ifdef WITH_SSL
 void ConnectionDescriptor::SetTlsParms(
-		const char *sni_hostname,
-		const em_ssl_ctx_t *ctxParams) {
+		const em_ssl_ctx_t *ctxParams,
+		const char *sni_hostname) {
 	if (SslBox)
 		throw std::runtime_error ("call SetTlsParms before calling StartTls");
 	if (!ctxParams)
@@ -1406,8 +1406,8 @@ void ConnectionDescriptor::SetTlsParms(
 }
 #else
 void ConnectionDescriptor::SetTlsParms (
-		const char *sni_hostname UNUSED,
-		const em_ssl_ctx_t *ctxParams UNUSED) {
+		const em_ssl_ctx_t *ctxParams UNUSED,
+		const char *sni_hostname UNUSED) {
 {
 	throw std::runtime_error ("Encryption not available on this event-machine");
 }

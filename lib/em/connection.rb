@@ -471,7 +471,7 @@ module EventMachine
       context.setup
 
       begin
-        EventMachine::set_tls_parms(@signature, hostname || '', context)
+        EventMachine::set_tls_parms(@signature, context, hostname)
       rescue RuntimeError => ex
         case ex
         when /X509_check_private_key/

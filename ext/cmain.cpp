@@ -482,13 +482,13 @@ evma_set_tls_parms
 
 extern "C" void evma_set_tls_parms(
 		const uintptr_t binding,
-		const char *sni_hostname,
-		em_ssl_ctx_t context) {
+		em_ssl_ctx_t context,
+		const char *sni_hostname) {
 	ensure_eventmachine("evma_set_tls_parms");
 	EventableDescriptor *ed =
 		dynamic_cast<EventableDescriptor *>(Bindable_t::GetObject(binding));
 	if (ed)
-		ed->SetTlsParms(sni_hostname, &context);
+		ed->SetTlsParms(&context, sni_hostname);
 }
 
 /******************

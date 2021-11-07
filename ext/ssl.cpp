@@ -359,6 +359,69 @@ em_ossl_sslctx_set_default_certificate(
 	}
 }
 
+	static void
+em_ossl_sslctx_set_tmp_dh(SSL_CTX *pCtx, const char *dhparam)
+{
+	if (dhparam && *dhparam) {
+		DH   *dh;
+		BIO  *bio;
+
+		bio = BIO_new_file(dhparam, "r");
+		if (bio == NULL) {
+			char buf [500];
+			snprintf (buf, sizeof(buf)-1, "dhparam: BIO_new_file(%s) failed", dhparam);
+			throw std::runtime_error (buf);
+		}
+
+		dh = PEM_read_bio_DHparams(bio, NULL, NULL, NULL);
+
+		if (dh == NULL) {
+			BIO_free(bio);
+			char buf [500];
+			snprintf (buf, sizeof(buf)-1, "dhparam: PEM_read_bio_DHparams(%s) failed", dhparam);
+			throw std::runtime_error (buf);
+		}
+
+		SSL_CTX_set_tmp_dh(pCtx, dh);
+
+		DH_free(dh);
+		BIO_free(bio);
+	}
+}
+
+static void
+em_ossl_sslctx_set_tmp_ecdh(SSL_CTX *pCtx, const char *ecdh_curve)
+{
+	if (ecdh_curve && *ecdh_curve) {
+#if OPENSSL_VERSION_NUMBER >= 0x0090800fL && !defined(OPENSSL_NO_ECDH)
+		int      nid;
+		EC_KEY  *ecdh;
+
+		nid = OBJ_sn2nid((const char *) ecdh_curve);
+		if (nid == 0) {
+			char buf [200];
+			snprintf (buf, sizeof(buf)-1, "ecdh_curve: Unknown curve name: %s", ecdh_curve);
+			throw std::runtime_error (buf);
+		}
+
+		ecdh = EC_KEY_new_by_curve_name(nid);
+		if (ecdh == NULL) {
+			char buf [200];
+			snprintf (buf, sizeof(buf)-1, "ecdh_curve: Unable to create: %s", ecdh_curve);
+			throw std::runtime_error (buf);
+		}
+
+		SSL_CTX_set_options(pCtx, SSL_OP_SINGLE_ECDH_USE);
+
+		SSL_CTX_set_tmp_ecdh(pCtx, ecdh);
+
+		EC_KEY_free(ecdh);
+#else
+		throw std::runtime_error ("No openssl ECDH support");
+#endif
+	}
+}
+
 static void
 em_ossl_sslctx_set_cipher_list(SSL_CTX *pCtx, const char *ciphers)
 {
@@ -420,8 +483,8 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 	em_ossl_sslctx_set_ca_file_and_path(pCtx, ctx->ca_file, ctx->ca_path);
 	em_ossl_sslctx_use_certificate(pCtx, ctx);
 
+	// Backward compatibility: don't set SSL_set_verify when VERIFY_NONE
 	if (ctx->verify_mode != SSL_VERIFY_NONE) {
-		// Backward compatibility: only SSL_set_verify if not VERIFY_NONE
 		SSL_CTX_set_verify(pCtx, ctx->verify_mode, em_ossl_ssl_verify_callback);
 	}
 
@@ -434,63 +497,8 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 				ctx->cert,
 				ctx->private_key_file,
 				ctx->key);
-
-		std::string dhparam = ctx->dhparam ? ctx->dhparam : "";
-		if (dhparam.length() > 0) {
-			DH   *dh;
-			BIO  *bio;
-
-			bio = BIO_new_file(dhparam.c_str(), "r");
-			if (bio == NULL) {
-				char buf [500];
-				snprintf (buf, sizeof(buf)-1, "dhparam: BIO_new_file(%s) failed", dhparam.c_str());
-				throw std::runtime_error (buf);
-			}
-
-			dh = PEM_read_bio_DHparams(bio, NULL, NULL, NULL);
-
-			if (dh == NULL) {
-				BIO_free(bio);
-				char buf [500];
-				snprintf (buf, sizeof(buf)-1, "dhparam: PEM_read_bio_DHparams(%s) failed", dhparam.c_str());
-				throw std::runtime_error (buf);
-			}
-
-			SSL_CTX_set_tmp_dh(pCtx, dh);
-
-			DH_free(dh);
-			BIO_free(bio);
-		}
-
-		std::string ecdh_curve = ctx->ecdh_curve ? ctx->ecdh_curve : "";
-		if (ecdh_curve.length() > 0) {
-			#if OPENSSL_VERSION_NUMBER >= 0x0090800fL && !defined(OPENSSL_NO_ECDH)
-				int      nid;
-				EC_KEY  *ecdh;
-
-				nid = OBJ_sn2nid((const char *) ecdh_curve.c_str());
-				if (nid == 0) {
-					char buf [200];
-					snprintf (buf, sizeof(buf)-1, "ecdh_curve: Unknown curve name: %s", ecdh_curve.c_str());
-					throw std::runtime_error (buf);
-				}
-
-				ecdh = EC_KEY_new_by_curve_name(nid);
-				if (ecdh == NULL) {
-					char buf [200];
-					snprintf (buf, sizeof(buf)-1, "ecdh_curve: Unable to create: %s", ecdh_curve.c_str());
-					throw std::runtime_error (buf);
-				}
-
-				SSL_CTX_set_options(pCtx, SSL_OP_SINGLE_ECDH_USE);
-
-				SSL_CTX_set_tmp_ecdh(pCtx, ecdh);
-
-				EC_KEY_free(ecdh);
-			#else
-				throw std::runtime_error ("No openssl ECDH support");
-			#endif
-		}
+		em_ossl_sslctx_set_tmp_dh(pCtx, ctx->dhparam);
+		em_ossl_sslctx_set_tmp_ecdh(pCtx, ctx->ecdh_curve);
 	}
 
 	em_ossl_sslctx_set_cipher_list(pCtx, ctx->ciphers);
@@ -801,6 +809,7 @@ const char *SslBox_t::GetSNIHostname()
  * em_ossl_ssl_verify_callback
  ******************************/
 
+// TODO: copy stdlib's callback
 extern "C" int em_ossl_ssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
 {
 	X509 *cert = X509_STORE_CTX_get_current_cert(ctx);
@@ -819,7 +828,7 @@ extern "C" int em_ossl_ssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx
 	BIO_write(out, "\0", 1);
 	BIO_get_mem_ptr(out, &buf);
 
-	X509_NAME_print_ex_fp(stderr, X509_get_subject_name(cert), 0, 0);
+	/* X509_NAME_print_ex_fp(stderr, X509_get_subject_name(cert), 0, 0); */
 	ConnectionDescriptor *cd = dynamic_cast<ConnectionDescriptor *>(
 			Bindable_t::GetObject(binding));
 	verified = cd->VerifySslPeer(buf->data, preverify_ok == 0 ? false : true);

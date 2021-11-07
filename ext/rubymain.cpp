@@ -491,14 +491,14 @@ t_set_tls_parms
 static VALUE t_set_tls_parms(
 		VALUE self UNUSED,
 		VALUE signature,
-		VALUE snihostname,
-		VALUE context) {
+		VALUE context,
+		VALUE snihostname) {
 	VALUE gc_guard = Qundef;
 	try {
-		char *c_hostname = StringValueCStr(snihostname);
+		char *c_hostname = NIL_P(snihostname) ? NULL : StringValueCStr(snihostname);
 		em_ssl_ctx_t ctx;
 		gc_guard = extract_ssl_context_struct(context, &ctx);
-		evma_set_tls_parms(NUM2BSIG(signature), c_hostname, ctx);
+		evma_set_tls_parms(NUM2BSIG(signature), ctx, c_hostname);
 	} catch (const std::runtime_error& e) {
 		rb_raise (rb_eRuntimeError,
 				"EventMachine.set_tls_parms: %s", e.what());

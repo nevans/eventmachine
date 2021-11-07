@@ -43,7 +43,19 @@ module EventMachine
     #   strings instead of just filenames.
     class Context
       DEFAULT_PARAMS = OpenSSL::SSL::SSLContext::DEFAULT_PARAMS
-      DEFAULT_CERT_STORE = SSL::X509Store::DEFAULT
+      DEFAULT_CERT_STORE = OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE
+
+      # @note unlike stdlib {OpenSSL::SSL::SSLContext::DEFAULT_TMP_DH_CALLBACK},
+      #   this also supports a keylen of 1024
+      DEFAULT_TMP_DH_CALLBACK = -> (ctx, is_export, keylen) {
+        warn "using default DH parameters." if $VERBOSE
+        case keylen
+        when 1024 then DefaultDHKey1024
+        when 2048 then DefaultDHKey2048
+        else
+          nil
+        end
+      }
 
       # call-seq:
       #    Context.new           -> ctx
@@ -76,17 +88,36 @@ module EventMachine
       # Files are looked up by subject's X509 name's hash value.
       attr_accessor :ca_path
 
-      # @return [X509Store] An X509 Store used for certificate verification.
+      # @return [OpenSSL::X509::Store] An X509 certificate store, _similar_ to
+      #   the one used for certificate verification.
       #
       # If {#ca_file}, {#ca_path}, and {#cert_store} are not set and
       # {#verify_mode} isn't {VERIFY_NONE}, then {#set_params} will set this to
-      # {EventMachine::SSL::X509Store::DEFAULT}.
+      # {EventMachine::SSL::Context::DEFAULT_CERT_STORE}.
       #
       # Earlier versions of EventMachine left this unset, but that is *strongly*
       # discouraged.
       #
-      # TODO: allow setting with a user-defined X509 Store object.
-      attr_accessor :cert_store
+      # @note Although this returns a stdlib X509Store, EventMachine currently
+      #   constructs a distinct internal X509_STORE, which attempts to mimic
+      #   the settings used on the stdlib store.
+      #
+      attr_reader :cert_store
+
+      # Sets the X509 {cert_store}.
+      #
+      # @param x509_store [true,OpenSSL::X509::Store] the certificate store, or
+      #   {true} to use the default store.
+      #
+      # @note Only the default or nil/false are currently supported.
+      #
+      # @todo allow setting with any user-defined X509 Store object.
+      def cert_store=(x509_store)
+        if x509_store && x509_store != true && x509_store != DEFAULT_CERT_STORE
+          raise NotImplementedError, "Only DEFAULT_CERT_STORE is currently supported"
+        end
+        @cert_store = x509_store ? DEFAULT_CERT_STORE : nil
+      end
 
       # @return [Integer] Session verification mode, as a bitmask.
       #
@@ -241,10 +272,9 @@ module EventMachine
 
       # TODO: add_certificate          => ossl_sslctx_add_certificate
 
+      # @todo mimic stdlib ciphers API here
       # @note ciphers will transformed into a string in rubymain.cpp
       attr_accessor :ciphers
-
-      # TODO: ecdh_curves              => ossl_sslctx_set_ecdh_curves
 
       PROTOS_MAP = METHODS_MAP.merge({
         ssl23:   0,
@@ -337,59 +367,8 @@ module EventMachine
         }
       end
 
-      # TODO: setup                    => ossl_sslctx_setup
-      # The functionality stdlib openssl places here is mostly handled in
-      # the constructor for SslBox_t.
-      def setup
-        return if frozen?
-
-        guard_cert_options!
-
-        instance_variables.each do |name|
-          ivar = instance_variable_get(name)
-          ivar = -ivar.to_str if ivar.respond_to?(:to_str)
-        end
-
-        @setup_done = true
-        freeze
-      end
-
-      def freeze
-        setup unless @setup_done
-        super
-      end
-
-      private def guard_cert_options!
-        [private_key_file, cert_chain_file].each do |file|
-          next if file.nil? or file.empty?
-          unless File.exist? file
-            raise FileNotFoundException,
-              "Could not find #{file} for #{self.class}.#{__method__}"
-          end
-        end
-
-        if !private_key_file.nil? && !private_key_file.empty? &&
-            !private_key.nil? && !private_key.empty?
-          raise BadPrivateKeyParams,
-            "Specifying both private_key and private_key_file not allowed"
-        end
-
-        if !cert_chain_file.nil? && !cert_chain_file.empty? &&
-            !cert.nil? && !cert.empty?
-          raise BadCertParams, "Specifying both cert and cert_chain_file not allowed"
-        end
-
-        if (!private_key_file.nil? && !private_key_file.empty?) ||
-            (!private_key.nil? && !private_key.empty?)
-          if (cert_chain_file.nil? || cert_chain_file.empty?) &&
-              (cert.nil? || cert.empty?)
-            raise BadParams, "You have specified a private key to use, but not the related cert"
-          end
-        end
-      end
-
       # @return [String] the client certificate to use, complete with header and
-      #   footer. If a cert chain is required, you will have to use the
+      #   footer. If a cert chain is required, you should use the
       #   {cert_chain_file} option. If both {cert_chain_file} and {cert} are
       #   used, BadCertParams will be raised.
       #
@@ -432,17 +411,46 @@ module EventMachine
       #   to decode :private_key or :private_key_file
       attr_accessor :private_key_pass
 
-      # @deprecated Provided for backwards compatibility.  Use {#ecdh_curves=}.
-      #
-      # @param curves [String] The curve for ECDHE ciphers. See available ciphers
-      #   with 'openssl ecparam -list_curves'
-      attr_accessor :ecdh_curve
-
       # @return [String] The local path of a file containing DH parameters for
       #   EDH ciphers in [PEM
       #   format](http://en.wikipedia.org/wiki/Privacy_Enhanced_Mail) See:
       #   'openssl dhparam'
-      attr_accessor :dhparam
+      attr_reader :dhparam
+
+      # @param curves [String] The curve for ECDHE ciphers. See available ciphers
+      #   with 'openssl ecparam -list_curves'
+      #
+      # @todo copy from ossl_sslctx_set_ecdh_curves?
+      attr_accessor :ecdh_curves
+
+      # @deprecated Provided for backwards compatibility.  Use {#ecdh_curves}.
+      alias ecdh_curve  ecdh_curves
+      # @deprecated Provided for backwards compatibility.  Use {#ecdh_curves=}.
+      alias ecdh_curve= ecdh_curves=
+
+      def dhparam=(value)
+        @tmp_dh_callback = value ?
+          proc {|_, _, key_length| OpenSSL::PKey::DH.new(value) } :
+          DEFAULT_TMP_DH_CALLBACK
+        @dhparam = value
+      end
+
+      # @todo this is currently only supported when using em/pure_ruby
+      attr_writer :tmp_dh_callback
+
+      # @todo this is currently only supported when using em/pure_ruby
+      def tmp_dh_callback
+        defined?(@tmp_dh_callback) ? @tmp_dh_callback : DEFAULT_TMP_DH_CALLBACK
+      end
+
+      # @todo this is currently only supported when using em/pure_ruby
+      attr_writer :tmp_ecdh_callback
+
+      # @todo this is currently only supported when using em/pure_ruby
+      def tmp_ecdh_callback
+        defined?(@tmp_ecdh_callback) ? @tmp_ecdh_callback :
+          (ecdh_curves && proc { OpenSSL::PKey::EC.new(ecdh_curves) })
+      end
 
       # @deprecated Provided for backwards compatibility.  Use {#ciphers=}.
       #
@@ -508,6 +516,135 @@ module EventMachine
         (verify_mode & VERIFY_FAIL_IF_NO_PEER_CERT) != 0
       end
       alias fail_if_no_peer_cert fail_if_no_peer_cert?
+
+      STDLIB_ATTR_WRITERS = OpenSSL::SSL::SSLContext.instance_methods(false)
+        .select {|m| m.to_s.match? /\=$/ }
+        .map {|m| m.to_s.sub(/=$/, "").to_sym }
+        .freeze
+      private_constant :STDLIB_ATTR_WRITERS
+
+      # Also runs setup
+      def freeze
+        setup unless @setup_done
+        super
+      end
+
+      # Prepares this context to be used, and also freezes it.
+      #
+      # Most of the functionality that stdlib openssl places here is handled in
+      # the C++ constructor for SslContext_t.
+      #
+      # @todo copy missing setup from stdlib's ossl_sslctx_setup
+      def setup
+        return if frozen?
+
+        guard_cert_options!
+
+        instance_variables.each do |name|
+          ivar = instance_variable_get(name)
+          ivar = -ivar.to_str if ivar.respond_to?(:to_str)
+        end
+
+        setup_stdlib_compat
+
+        @setup_done = true
+        freeze
+      end
+
+      # @todo this is currently only supported when using em/pure_ruby
+      attr_reader :use_server_defaults
+
+      # @todo this is currently only supported when using em/pure_ruby
+      def use_server_defaults=(bool)
+        @use_server_defaults = !!bool unless bool == !!use_server_defaults
+      end
+
+      # convert into an {OpenSSL::SSL::SSLContext} object.
+      #
+      # @param klass [Class] (OpenSSL::SSL::SSLContext) only change in testing
+      def to_stdlib_ssl_ctx(klass = OpenSSL::SSL::SSLContext)
+        setup # ensures all of the ivars are set
+        ctx = klass.new
+        STDLIB_ATTR_WRITERS.each do |m|
+          ivname = :"@#{m}"
+          writer = :"#{m}="
+          if instance_variable_defined?(ivname)
+            ivar = instance_variable_get(ivname)
+            ctx.send(writer, ivar)
+          end
+        end
+        ctx
+      end
+
+      # @return [Boolean] whether default certifacates (etc) should be used
+      #   This is only (currently?) used by em/pure_ruby.  It will cause
+      #   SSL_OP_SINGLE_ECDH_USE to be set when {ecdh_curve} is set.
+      attr_accessor :use_server_defaults
+
+      private
+
+      def guard_cert_options!
+        [private_key_file, cert_chain_file].each do |file|
+          next if file.nil? or file.empty?
+          unless File.exist? file
+            raise FileNotFoundException,
+              "Could not find #{file} for #{self.class}.#{__method__}"
+          end
+        end
+
+        if !private_key_file.nil? && !private_key_file.empty? &&
+            !private_key.nil? && !private_key.empty?
+          raise BadPrivateKeyParams,
+            "Specifying both private_key and private_key_file not allowed"
+        end
+
+        if !cert_chain_file.nil? && !cert_chain_file.empty? &&
+            !cert.nil? && !cert.empty?
+          raise BadCertParams, "Specifying both cert and cert_chain_file not allowed"
+        end
+
+        if (!private_key_file.nil? && !private_key_file.empty?) ||
+            (!private_key.nil? && !private_key.empty?)
+          if (cert_chain_file.nil? || cert_chain_file.empty?) &&
+              (cert.nil? || cert.empty?)
+            raise BadParams, "You have specified a private key to use, but not the related cert"
+          end
+        end
+      end
+
+      def tls_parm_set?(parm)
+        !(parm.nil? || parm.empty?)
+      end
+
+      # This simplifies to_stdlib_ssl_ctx, which copies all ivars with
+      # matching stdlib writers.
+      #
+      # String ivars are converted to the appropriate stdlib OpenSSL objects.
+      # And some ivar names differ from their writers... to match stdlib. (lol)
+      def setup_stdlib_compat
+        return unless defined?(EventMachine.library_type)
+        return unless EventMachine.library_type == :pure_ruby
+
+        @min_version = @min_proto_version if defined?(@min_proto_version)
+        @max_version = @max_proto_version if defined?(@max_proto_version)
+
+        # convert empty strings to nil
+        self.cert             = nil unless tls_parm_set?(cert)
+        self.cert_chain_file  = nil unless tls_parm_set?(cert_chain_file)
+        self.key              = nil unless tls_parm_set?(key)
+        self.private_key_file = nil unless tls_parm_set?(private_key_file)
+
+        self.cert ||= File.read(cert_chain_file) if cert_chain_file
+        self.cert &&= OpenSSL::X509::Certificate(cert)
+        self.key  &&= OpenSSL::PKey::RSA.new(key, priv_key_pass)
+
+        if use_server_defaults?
+          self.tmp_dh_callback   = tmp_dh_callback
+          self.tmp_ecdh_callback = tmp_ecdh_callback
+          ctx.cert ||= DefaultCertificate.cert
+          ctx.key  ||= DefaultCertificate.key
+        end
+      end
 
     end
 
