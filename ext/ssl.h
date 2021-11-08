@@ -65,6 +65,7 @@ typedef struct em_ssl_ctx {
 	const char *key;
 	const char *private_key_file;
 	const char *private_key_pass;
+	int  private_key_pass_len;
 
 	const char *ciphers;
 	const char *ecdh_curve;

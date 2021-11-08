@@ -462,7 +462,9 @@ extract_ssl_context_struct (VALUE obj, em_ssl_ctx_t *ctx) {
 	EM_SSL_CTX_COPY_IVAR_STR(cert_chain_file);
 	EM_SSL_CTX_COPY_IVAR_STR(key);
 	EM_SSL_CTX_COPY_IVAR_STR(private_key_file);
-	EM_SSL_CTX_COPY_IVAR_STR(private_key_pass);
+
+	EM_SSL_CTX_COPY_IVAR(StringValuePtr, private_key_pass, "");
+	ctx->private_key_pass_len = NIL_P(ivar) ? 0 : RSTRING_LENINT(ivar);
 
 	EM_SSL_CTX_COPY_IVAR_STR(ecdh_curve);
 	EM_SSL_CTX_COPY_IVAR_STR(dhparam);

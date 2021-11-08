@@ -295,7 +295,13 @@ em_ossl_sslctx_use_certificate(SSL_CTX *pCtx, const em_ssl_ctx_t *opts)
 	std::string certchainfile    = CPPSAFE_CSTR(opts->cert_chain_file);
 	std::string key              = CPPSAFE_CSTR(opts->key);
 	std::string private_key_file = CPPSAFE_CSTR(opts->private_key_file);
-	std::string private_key_pass = CPPSAFE_CSTR(opts->private_key_pass);
+	std::string private_key_pass;
+
+	if (opts->private_key_pass_len > 0) {
+		private_key_pass = std::string (
+				opts->private_key_pass,
+				opts->private_key_pass_len);
+	}
 
 	// As indicated in man(3) ssl_ctx_use_privatekey_file
 	// To change a certificate, private key pair the new certificate needs to be set with
