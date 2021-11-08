@@ -1,5 +1,7 @@
 ---
 
+ca: true
+
 subject:
   C: RB
   ST: EM

@@ -1,7 +1,7 @@
-require 'rake/testtask'
-require 'rake/clean'
-require "openssl"
+require "rake/testtask"
+require "rake/clean"
 require "yaml"
+require "openssl"
 
 Rake::TestTask.new(:test) do |t|
   t.pattern = 'tests/**/test_*.rb'
@@ -19,7 +19,6 @@ namespace "test" do
     ]
     CLOBBER_FIXTURES = ::Rake::FileList[
       "tests/fixtures/*.aes-key",
-      "tests/fixtures/*.ca-crt",
       "tests/fixtures/*.crt",
       "tests/fixtures/*.key",
       "tests/fixtures/*.pass",
@@ -70,11 +69,22 @@ namespace "test" do
       rand(1..(2**159-1))
     end
 
+    def load_cfg(f)
+      YAML.load(File.read(f))
+    end
+
+    def load_cert(f)
+      open(f) {|io| OpenSSL::X509::Certificate.new(io.read) }
+    end
+
+    def load_key(f, passfile=nil)
+      passphrase = File.read(passfile) if passfile
+      open(f) {|io| OpenSSL::PKey.read(io, passphrase) }
+    end
+
     def get_ca_crt_and_key(ca)
-      ca_crtfile = "tests/fixtures/#{ca}.ca-crt"
+      ca_crtfile = "tests/fixtures/#{ca}.crt"
       ca_keyfile = "tests/fixtures/#{ca}.key"
-      Rake::Task[ca_crtfile].invoke
-      Rake::Task[ca_keyfile].invoke
       ca_crt = open(ca_crtfile) {|io| OpenSSL::X509::Certificate.new(io.read) }
       ca_key = open(ca_keyfile) {|io| OpenSSL::PKey.read(io) }
       [ca_crt, ca_key]
@@ -127,54 +137,77 @@ namespace "test" do
       crt
     end
 
-    rule %r{fixtures/.*\.crt$} => [".csr", ".csr.yml"] do |t|
-      csr = OpenSSL::X509::Request.new(File.read(t.source))
-      cfg = YAML.load(File.read(t.source.ext(".csr.yml")))
-      crt = x509_issue_crt_from_csr(cfg, csr)
-      write_pem(crt, t.name)
+    Rake::FileList["tests/fixtures/*.yml"].each do |f|
+      cfg = load_cfg(f)
+      fcrt = f.ext('.crt')
+      ca = cfg.fetch("ca")
+      if ca == true
+        # Generating a CA certificate
+        fkey = f.ext('.key')
+        file fcrt => [fkey, f] do |t|
+          key = open(fkey) {|io| OpenSSL::PKey.read(io) }
+          crt = x509_make_ca_crt(cfg, key)
+          write_pem(crt, fcrt)
+        end
+      elsif cfg.fetch("csr") == true
+        # Generating a certificate from a CSR
+        fcsr = f.ext(".csr")
+        fcacrt = f.pathmap("%d/#{ca}.crt")
+        fcakey = f.pathmap("%d/#{ca}.key")
+        file fcrt => [fcsr, fcacrt, fcakey, f] do |t|
+          ca_crt = open(fcacrt) {|io| OpenSSL::X509::Certificate.new(io.read) }
+          ca_key = open(fcakey) {|io| OpenSSL::PKey.read(io) }
+          csr = OpenSSL::X509::Request.new(File.read(fcsr))
+          crt = x509_issue_crt_from_csr(cfg, csr)
+          write_pem(crt, fcrt)
+        end
+      else
+        raise "unhandled config format: #{f}"
+      end
+
+      task certs: fcrt
     end
 
-    rule %r{fixtures/.*\.ca-crt$} => [".key", ".ca.yml"] do |t|
-      key = open(t.source) {|io| OpenSSL::PKey.read(io) }
-      cfg = YAML.load(File.read(t.source.ext(".ca.yml")))
-      crt = x509_make_ca_crt(cfg, key)
-      write_pem(crt, t.name)
-    end
-
-    rule %r{fixtures/.*\.csr$} => [".key", ".csr.yml"] do |t|
-      key = open(t.source) {|io| OpenSSL::PKey.read(io) }
-      cfg = YAML.load(File.read(t.source.ext(".csr.yml")))
+    rule ".csr" => [".key", ".yml"] do |t|
+      key = load_key(t.source)
+      cfg = load_cfg(t.source.ext(".yml"))
       csr = x509_make_csr(cfg, key)
       write_pem(csr, t.name)
     end
 
-    rule %r{fixtures/.*\.pub$} => ".key" do |t|
-      key = open(t.source) {|io| OpenSSL::PKey.read(io) }
+    rule ".pub" => [".key", ".yml"] do |t|
+      key = load_key(t.source)
       write_pem(key.public_key, t.name)
     end
 
-    rule %r{fixtures/.*\.key$} => ".aes-key" do |t|
-      passphrase = File.read(t.source.ext(".pass"))
-      key = open(t.source) {|io| OpenSSL::PKey.read(io, passphrase) }
+    rule ".key" => [".aes-key", ".yml"] do |t|
+      key = load_key(t.source, t.source.ext(".pass"))
       write_pem(key, t.name)
     end
 
-    rule %r{fixtures/.*\.aes-key$} => ".pass" do |t|
+    rule ".aes-key" => [".pass", ".yml"] do |t|
       cipher = OpenSSL::Cipher.new 'AES-128-CBC'
       passphrase = File.read(t.source)
       key = OpenSSL::PKey::RSA.new 2048
       write_pem(key, t.name, passphrase: passphrase)
     end
 
-    rule %r{fixtures/.*\.pass$} do |t|
-      OpenSSL::Random.write_random_file t.name
+    rule ".pass" => ".yml" do |t|
+      require "securerandom"
+      open t.name, "w" do |io|
+        io << SecureRandom.urlsafe_base64(128)
+      end
     end
 
     rule "tests/fixtures/*" => "tests/fixtures"
 
   end
 
+  task fixtures: "fixtures:certs"
+
 end
 
 task clean:   "test:fixtures:clean"
 task clobber: "test:fixtures:clobber"
+
+task test: "test:fixtures"

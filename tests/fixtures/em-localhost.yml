@@ -1,5 +1,7 @@
 ---
 
+csr: true
+
 subject:
   C: EM
   ST: EventMachine
