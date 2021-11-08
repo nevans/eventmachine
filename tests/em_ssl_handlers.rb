@@ -32,6 +32,21 @@
 #
 module EMSSLHandlers
 
+  CERTS_DIR        = "#{__dir__}/fixtures"
+
+  CA_NAME          = "eventmachine-ca"
+  CERT_NAME        = "em-localhost"
+
+  CA_FILE          = "#{CERTS_DIR}/#{CA_NAME}.crt",
+  CERT_FILE        = "#{CERTS_DIR}/#{CERT_NAME}.crt"
+  ENCODED_KEY_FILE = "#{CERTS_DIR}/#{CERT_NAME}.aes-key"
+  PRIVATE_KEY_FILE = "#{CERTS_DIR}/#{CERT_NAME}.key"
+  ENCODED_PASSFILE = "#{CERTS_DIR}/#{CERT_NAME}.pass"
+  CERT_PEM         = File.read CERT_FILE
+  PRIVATE_KEY_PEM  = File.read PRIVATE_KEY_FILE
+  ENCODED_KEY_PEM  = File.read ENCODED_KEY_FILE
+  ENCODED_KEY_PASS = File.read ENCODED_PASSFILE
+
   IP, PORT = "127.0.0.1", 16784
 
   # is OpenSSL version >= 1.1.0
@@ -76,6 +91,7 @@ module EMSSLHandlers
     end
 
     def ssl_verify_peer(cert, preverify_ok)
+      # puts "Client, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
       @@preverify_ok << preverify_ok
       @@cert = cert
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")
@@ -137,6 +153,7 @@ module EMSSLHandlers
     end
 
     def ssl_verify_peer(cert, preverify_ok)
+      # puts "Server, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
       @@preverify_ok << preverify_ok
       @@cert = cert
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")
