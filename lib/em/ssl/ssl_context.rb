@@ -57,6 +57,7 @@ module EventMachine
         self.ssl_version = version if version
         self.verify_mode = OpenSSL::SSL::VERIFY_NONE
         self.verify_hostname = false
+        self.skip_post_connection_check = false
       end
 
       #######################################################################
@@ -562,6 +563,17 @@ module EventMachine
         ctx
       end
 
+      # @return [Boolean] whether to skip the post_connection_check from the
+      #   verify_callback or ssl_handshake_completed.
+      #  Defaults to false.
+      attr_accessor :skip_post_connection_check
+
+      # @return [Boolean] whether to run the standard RFC6125 post connection
+      #   Defaults to true whenever verifying hostname.
+      def post_connection_check?
+        !skip_post_connection_check && !verify_none? && verify_hostname
+      end
+
       private
 
       def guard_cert_options!
@@ -640,6 +652,5 @@ module EventMachine
       end
 
     end
-
   end
 end
