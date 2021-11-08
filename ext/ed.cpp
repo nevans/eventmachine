@@ -1401,8 +1401,7 @@ void ConnectionDescriptor::SetTlsParms(
 		SslContext = NULL;
 	}
 	SslContext = new SslContext_t (bIsServer, ctxParams);
-	if (sni_hostname && *sni_hostname)
-		SniHostName = sni_hostname;
+	SniHostName = sni_hostname ? sni_hostname : "";
 }
 #else
 void ConnectionDescriptor::SetTlsParms (

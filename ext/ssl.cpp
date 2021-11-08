@@ -575,6 +575,7 @@ SslBox_t::SslBox_t (
 	Context (ctx),
 	pSSL (NULL),
 	pbioRead (NULL),
+	SniHostname (snihostname),
 	pbioWrite (NULL)
 {
 	/* TODO: allow re-use of SSL_CTX from ruby */

@@ -77,6 +77,7 @@ class SslContext_t
 	public:
 		SslContext_t (bool is_server, const em_ssl_ctx_t *context);
 		virtual ~SslContext_t();
+		bool bVerifyHostname;
 
 	private:
 		static bool bLibraryInitialized;
@@ -84,7 +85,6 @@ class SslContext_t
 
 	private:
 		bool bIsServer;
-		bool bVerifyHostname;
 		SSL_CTX *pCtx;
 
 		EVP_PKEY *PrivateKey;
@@ -112,6 +112,7 @@ class SslBox_t
 				const uintptr_t binding);
 		virtual ~SslBox_t();
 
+		const std::string SniHostname;
 		int PutPlaintext (const char*, int);
 		int GetPlaintext (char*, int);
 
