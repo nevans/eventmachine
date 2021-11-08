@@ -26,9 +26,12 @@ See the file COPYING for complete licensing information.
 bool SslContext_t::bLibraryInitialized = false;
 
 // for now, the *only* X509 store
-X509_STORE* SslContext_t::bDefaultX509Store = NULL;
+X509_STORE* em_ossl_default_X509_STORE = NULL;
 
-static void InitializeDefaultCredentials();
+static int em_ossl_ssl_ex_binding_idx;
+static int em_ossl_ssl_ex_ptr_idx;
+static int em_ossl_sslctx_ex_ptr_idx;
+
 static EVP_PKEY *DefaultPrivateKey = NULL;
 static X509 *DefaultCertificate = NULL;
 
@@ -173,6 +176,40 @@ static X509_STORE *InitializeDefaultX509Store() {
 	}
 	X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK_ALL);
 	return store;
+}
+
+// TODO: convert OpenSSL ERR into a ruby exception, like ossl_raise
+static void
+em_ossl_raise(const char *message)
+{
+	throw std::runtime_error(message);
+}
+
+static void
+em_ossl_init()
+{
+		SSL_library_init();
+		OpenSSL_add_ssl_algorithms();
+		OpenSSL_add_all_algorithms();
+		SSL_load_error_strings();
+		ERR_load_crypto_strings();
+
+		InitializeDefaultCredentials();
+		em_ossl_default_X509_STORE = InitializeDefaultX509Store();
+
+		em_ossl_ssl_ex_binding_idx = SSL_get_ex_new_index(
+				0, (void *)"em_ossl_ssl_ex_binding_idx", 0, 0, 0);
+		if (em_ossl_ssl_ex_binding_idx < 0)
+			em_ossl_raise("SSL_get_ex_new_index");
+		em_ossl_ssl_ex_ptr_idx = SSL_get_ex_new_index(
+				0, (void *)"em_ossl_ssl_ex_ptr_idx", 0, 0, 0);
+		if (em_ossl_ssl_ex_ptr_idx < 0)
+			em_ossl_raise("SSL_get_ex_new_index");
+		em_ossl_sslctx_ex_ptr_idx = SSL_CTX_get_ex_new_index(
+				0, (void *)"em_ossl_sslctx_ex_ptr_idx", 0, 0, 0);
+		if (em_ossl_sslctx_ex_ptr_idx < 0)
+			em_ossl_raise("SSL_CTX_get_ex_new_index");
+
 }
 
 /************************************
@@ -453,15 +490,8 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 	 */
 
 	if (!bLibraryInitialized) {
+		em_ossl_init();
 		bLibraryInitialized = true;
-		SSL_library_init();
-		OpenSSL_add_ssl_algorithms();
-		OpenSSL_add_all_algorithms();
-		SSL_load_error_strings();
-		ERR_load_crypto_strings();
-
-		InitializeDefaultCredentials();
-		bDefaultX509Store = InitializeDefaultX509Store();
 	}
 
 	#ifdef HAVE_TLS_SERVER_METHOD
@@ -485,7 +515,7 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 			ctx->max_proto_version);
 	em_ossl_sslctx_set_cert_store(
 			pCtx,
-			ctx->cert_store ? bDefaultX509Store : NULL);
+			ctx->cert_store ? em_ossl_default_X509_STORE : NULL);
 	em_ossl_sslctx_set_ca_file_and_path(pCtx, ctx->ca_file, ctx->ca_path);
 	em_ossl_sslctx_use_certificate(pCtx, ctx);
 
