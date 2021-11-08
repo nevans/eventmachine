@@ -596,7 +596,8 @@ SslBox_t::SslBox_t (
 	SSL_set_bio (pSSL, pbioRead, pbioWrite);
 
 	// Store a pointer to the binding signature in the SSL object so we can retrieve it later
-	SSL_set_ex_data(pSSL, 0, (void*) binding);
+	SSL_set_ex_data(pSSL, em_ossl_ssl_ex_binding_idx, (void*) binding);
+	SSL_set_ex_data(pSSL, em_ossl_ssl_ex_ptr_idx, (void*) this);
 
 	/* TODO: move verify mode and callback into SSL_CTX */
 
@@ -857,7 +858,7 @@ extern "C" int em_ossl_ssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx
 
 	ssl = (SSL *)X509_STORE_CTX_get_ex_data(
 			ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
-	binding = (uintptr_t)SSL_get_ex_data(ssl, 0);
+	binding = (uintptr_t)SSL_get_ex_data(ssl, em_ossl_ssl_ex_binding_idx);
 
 	out = BIO_new(BIO_s_mem());
 	PEM_write_bio_X509(out, cert);
