@@ -176,4 +176,5 @@ namespace "test" do
 
 end
 
+task clean:   "test:fixtures:clean"
 task clobber: "test:fixtures:clobber"

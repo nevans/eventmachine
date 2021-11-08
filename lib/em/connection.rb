@@ -123,6 +123,7 @@ module EventMachine
     #
     # @see #get_peer_cert
     def ssl_handshake_completed
+      # @ssl_connection&.ssl_handshake_completed
     end
 
     # Called by EventMachine when `verify_peer: true` has been passed to
@@ -454,33 +455,31 @@ module EventMachine
     #
     def start_tls args={}
       args = args.dup
+      context      = args.delete(:context)
 
-      hostname = args.delete(:hostname)
-      if hostname && args[:sni_hostname]
-        raise ArgumentError, "Do not send both :hostname and :sni_hostname"
+      sync_close   = args.delete(:sync_close)
+      hostname     = args.delete(:hostname)
+      sni_hostname = args.delete(:sni_hostname)
+
+      if hostname && sni_hostname
+        raise ArgumentError, "Do not send both hostname and sni_hostname"
+      elsif context && args.length != 0
+        raise ArgumentError, "Do not send both context and context params."
       end
-      hostname ||= args.delete(:sni_hostname)
 
-      context = args.delete(:context)
-      if context && args.length != 0
-        raise ArgumentError, "Do not send both :context and context params."
-      elsif context.nil?
+      if context.nil?
         context = EM::SSL::Context.new
         context.set_params(args)
       end
-      context.setup
 
-      begin
-        EventMachine::set_tls_parms(@signature, context, hostname)
-      rescue RuntimeError => ex
-        case ex
-        when /X509_check_private_key/
-          raise InvalidPrivateKey, ex.message
-        end
-      end
-
-      EventMachine::start_tls @signature
+      @ssl_connection = SSL::Connection.new(self, context)
+      ssl_connection.hostname   = hostname || sni_hostname
+      ssl_connection.sync_close = sync_close unless sync_close.nil?
+      ssl_connection.start_tls
     end
+
+    # @return [SSL::Connection] the SSL connection, after calling start_tls
+    attr_reader :ssl_connection
 
     # If [TLS](http://en.wikipedia.org/wiki/Transport_Layer_Security) is active on the connection, returns the remote [X509 certificate](http://en.wikipedia.org/wiki/X.509)
     # as a string, in the popular [PEM format](http://en.wikipedia.org/wiki/Privacy_Enhanced_Mail). This can then be used for arbitrary validation
