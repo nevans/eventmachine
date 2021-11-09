@@ -36,6 +36,17 @@ namespace "test" do
       Rake::Cleaner.cleanup_files(CLOBBER_FIXTURES)
     end
 
+    desc "Remove certs which may have expired"
+    task :expire do
+      any_expired = CLOBBER_FIXTURES.ext('crt')
+        .map {|f| load_cert(f) }
+        .any? {|c| c.not_after < Time.now + 60 }
+      Rake::Task["test:fixtures:clobber"].invoke if any_expired
+    end
+
+    desc "Generate all certificates"
+    task certs: :expire
+
     def write_pem(obj, file, passphrase: nil)
       cipher = OpenSSL::Cipher.new 'AES-128-CBC'
       open(file, "w") do |io|
