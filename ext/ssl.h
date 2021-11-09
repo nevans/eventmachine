@@ -121,6 +121,8 @@ class SslBox_t
 		int GetCiphertext (char*, int);
 		bool IsHandshakeCompleted() {return bHandshakeCompleted;}
 
+		int VerifyPeer(bool, X509_STORE_CTX *);
+
 		X509 *GetPeerCert();
 		int GetCipherBits();
 		const char *GetCipherName();

@@ -91,7 +91,7 @@ module EMSSLHandlers
     end
 
     def ssl_verify_peer(cert, preverify_ok)
-      # puts "Client, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
+      $stderr.puts "    Client, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
       @@preverify_ok << preverify_ok
       @@cert = cert
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")
@@ -153,7 +153,7 @@ module EMSSLHandlers
     end
 
     def ssl_verify_peer(cert, preverify_ok)
-      # puts "Server, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
+      $stderr.puts "    Server, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
       @@preverify_ok << preverify_ok
       @@cert = cert
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")

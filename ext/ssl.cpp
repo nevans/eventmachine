@@ -843,37 +843,109 @@ const char *SslBox_t::GetSNIHostname()
 	return NULL;
 }
 
+/**********************
+SslBox_t::VerifyPeer
+**********************/
+
+static bool
+call_stdlib_verify_certificate_identity(const char *cert_cstr, const char *hostname_cstr)
+{
+  if (!hostname_cstr && !*hostname_cstr) {
+    rb_warning("verify_hostname requires hostname to be set");
+    return true; // just copying stdlib...
+  }
+
+  VALUE hostname = hostname_cstr ? rb_str_new_cstr(hostname_cstr) : Qnil;
+
+  VALUE mOSSL = rb_const_get(rb_cObject, rb_intern_const("OpenSSL"));
+
+  VALUE mX509 = rb_const_get(mOSSL, rb_intern_const("X509"));
+  VALUE mCert = rb_const_get(mX509, rb_intern_const("Certificate"));
+  VALUE cert_str = rb_str_new_cstr(cert_cstr);
+  VALUE cert_obj = rb_funcall(mCert, rb_intern_const("new"), 1, cert_str);
+
+  VALUE mSSL  = rb_const_get(mOSSL, rb_intern_const("SSL"));
+  VALUE verified = rb_funcall(
+		  mSSL, rb_intern_const("verify_certificate_identity"),
+		  2, cert_obj, hostname);
+  return RTEST(verified);
+}
+
+int SslBox_t::VerifyPeer(bool preverify_ok, X509_STORE_CTX *ctx)
+{
+	SSL *ssl = (SSL *)X509_STORE_CTX_get_ex_data(
+			ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+	uintptr_t binding =
+		(uintptr_t)SSL_get_ex_data(ssl, em_ossl_ssl_ex_binding_idx);
+	X509 *cert = X509_STORE_CTX_get_current_cert(ctx);
+
+	BIO *out = BIO_new(BIO_s_mem());
+	PEM_write_bio_X509(out, cert);
+	BIO_write(out, "\0", 1);
+
+	BUF_MEM *buf;
+	BIO_get_mem_ptr(out, &buf);
+	char *cert_str = buf->data;
+
+	int depth = X509_STORE_CTX_get_error_depth(ctx);
+	int err = X509_STORE_CTX_get_error(ctx);
+	std::cerr << "\nVerifyPeer: ";
+	X509_NAME *name = X509_get_subject_name(cert);
+	X509_NAME_print_ex_fp(stderr, name, 0, 0);
+	std::cerr
+		<< "\n  " << (preverify_ok ? "ok" : "ERROR")
+		<< ":num=" << err
+		<< ":" << X509_verify_cert_error_string(err)
+		<< ":depth=" << depth
+		<< "\n";
+
+	bool verify_hostname = Context->bVerifyHostname;
+	bool verified = preverify_ok;
+
+	// if a server is looking at the final cert in the client's cert chain
+	/* if (preverify_ok && verify_hostname && !SSL_is_server(ssl) && */
+	/* 		!X509_STORE_CTX_get_error_depth(ctx)) { */
+	/* 	// TODO: rb_protect... or delegate via EventCallback? */
+	/* 	verified = call_stdlib_verify_certificate_identity( */
+	/* 			cert_str, SniHostname.c_str()); */
+
+	/* 	if (!verified) { */
+	/* 		preverify_ok = false; */
+/* #if defined(X509_V_ERR_HOSTNAME_MISMATCH) */
+	/* 		X509_STORE_CTX_set_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH); */
+/* #else */
+	/* 		X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED); */
+/* #endif */
+	/* 	} */
+	/* } */
+
+	ConnectionDescriptor *cd =
+		dynamic_cast<ConnectionDescriptor *>(Bindable_t::GetObject(binding));
+	verified = cd->VerifySslPeer(cert_str, preverify_ok);
+
+	BIO_free(out);
+
+	std::cerr << "  ssl_verify_peer returned " << (verified ? "ok" : "NOT VERIFIED") << "\n";
+	if (verified) {
+		X509_STORE_CTX_set_error(ctx, X509_V_OK);
+		return 1;
+	} else {
+		/* if (X509_STORE_CTX_get_error(ctx) == X509_V_OK) */
+		/* 	X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED); */
+		return 0;
+	}
+}
+
 /******************************
  * em_ossl_ssl_verify_callback
  ******************************/
 
-// TODO: copy stdlib's callback
 extern "C" int em_ossl_ssl_verify_callback(int preverify_ok, X509_STORE_CTX *ctx)
 {
-	X509 *cert = X509_STORE_CTX_get_current_cert(ctx);
-	BIO *out = BIO_new(BIO_s_mem());
-	SSL *ssl;
-	uintptr_t binding;
-	BUF_MEM *buf;
-	bool verified;
-
-	ssl = (SSL *)X509_STORE_CTX_get_ex_data(
+	SSL *ssl = (SSL *)X509_STORE_CTX_get_ex_data(
 			ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
-	binding = (uintptr_t)SSL_get_ex_data(ssl, em_ossl_ssl_ex_binding_idx);
-
-	out = BIO_new(BIO_s_mem());
-	PEM_write_bio_X509(out, cert);
-	BIO_write(out, "\0", 1);
-	BIO_get_mem_ptr(out, &buf);
-
-	/* X509_NAME_print_ex_fp(stderr, X509_get_subject_name(cert), 0, 0); */
-	ConnectionDescriptor *cd = dynamic_cast<ConnectionDescriptor *>(
-			Bindable_t::GetObject(binding));
-	verified = cd->VerifySslPeer(buf->data, preverify_ok == 0 ? false : true);
-	BIO_free(out);
-
-	return verified ? 1 : 0;
+	SslBox_t *box = (SslBox_t *)SSL_get_ex_data(ssl, em_ossl_ssl_ex_ptr_idx);
+	return box->VerifyPeer(preverify_ok != 0, ctx);
 }
 
 #endif // WITH_SSL
-

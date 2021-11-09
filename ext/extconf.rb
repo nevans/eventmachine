@@ -257,6 +257,7 @@ end
 have_func "TLS_server_method",                      "openssl/ssl.h"
 
 have_func "SSL_CTX_set_min_proto_version(NULL, 0)", "openssl/ssl.h"
+have_func "SSL_CTX_set_post_handshake_auth"
 
 # added in 1.1.1
 have_func "SSL_CTX_set1_cert_store(NULL, NULL)",    "openssl/ssl.h"
