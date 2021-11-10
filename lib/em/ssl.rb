@@ -92,7 +92,6 @@ module EventMachine
       # This method MUST be called after calling #connect to ensure that the
       # hostname of a remote peer has been verified.
       def post_connection_check(hostname)
-        peer_cert = self.peer_cert
         if peer_cert.nil?
           msg = "Peer verification enabled, but no certificate received."
           if using_anon_cipher?
@@ -178,7 +177,7 @@ module EventMachine
         self.ssl_version = version if version
         self.verify_mode = OpenSSL::SSL::VERIFY_NONE
         self.verify_hostname = false
-        self.post_connection_check = true
+        self.skip_post_connection_check = false
       end
 
       #######################################################################
@@ -624,7 +623,7 @@ module EventMachine
       alias fail_if_no_peer_cert fail_if_no_peer_cert?
 
       STDLIB_ATTR_WRITERS = OpenSSL::SSL::SSLContext.instance_methods(false)
-        .select {|m| m.to_s.match? /\=$/ }
+        .select {|m| m.to_s.match?(/\=$/) }
         .map {|m| m.to_s.sub(/=$/, "").to_sym }
         .freeze
       private_constant :STDLIB_ATTR_WRITERS
@@ -657,7 +656,9 @@ module EventMachine
         freeze
       end
 
-      # @todo this is currently only supported when using em/pure_ruby
+      # @return [Boolean] whether default certifacates (etc) should be used
+      #   This is only (currently?) used by em/pure_ruby.  It will cause
+      #   SSL_OP_SINGLE_ECDH_USE to be set when {ecdh_curve} is set.
       attr_reader :use_server_defaults
 
       # @todo this is currently only supported when using em/pure_ruby
@@ -682,19 +683,15 @@ module EventMachine
         ctx
       end
 
-      # @return [Boolean] whether default certifacates (etc) should be used
-      #   This is only (currently?) used by em/pure_ruby.  It will cause
-      #   SSL_OP_SINGLE_ECDH_USE to be set when {ecdh_curve} is set.
-      attr_accessor :use_server_defaults
-
-      # @return [Boolean] true when {verify_hostname} implies running the
-      #   post_connection_check. Defaults to true.
-      attr_accessor :post_connection_check
+      # @return [Boolean] whether to skip the post_connection_check from the
+      #   verify_callback or ssl_handshake_completed.
+      #  Defaults to false.
+      attr_accessor :skip_post_connection_check
 
       # @return [Boolean] whether to run the standard RFC6125 post connection
-      #   Defaults to true when verify mode isn't none and verifying hostname.
+      #   Defaults to true whenever verifying hostname.
       def post_connection_check?
-        post_connection_check && !verify_none? && verify_hostname
+        !skip_post_connection_check && !verify_none? && verify_hostname
       end
 
       private

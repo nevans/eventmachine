@@ -123,7 +123,7 @@ module EventMachine
     #
     # @see #get_peer_cert
     def ssl_handshake_completed
-      # @ssl_connection&.ssl_handshake_completed
+      @ssl_connection&.ssl_handshake_completed
     end
 
     # Called by EventMachine when `verify_peer: true` has been passed to

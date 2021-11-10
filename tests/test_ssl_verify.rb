@@ -20,6 +20,7 @@ class TestSSLVerify < Test::Unit::TestCase
     cert_chain_file:  "#{CERTS_DIR}/em-localhost.crt",
   }
 
+  # TODO: move this text fixture sanity check to another file...
   def test_encoded_private_key_matches_pass
     # just a sanity check...
     assert_nothing_thrown {
@@ -27,6 +28,62 @@ class TestSSLVerify < Test::Unit::TestCase
       key  = File.read(ENCODED_CERT_CONFIG[:private_key_file])
       key  = OpenSSL::PKey.read(key, pass)
     }
+  end
+
+  # TODO: pass depth, error number, and error string to verify callback
+
+  # TODO: make and use one or more intermediate CAs
+  # TODO: use eventmachine.localhost and/or eventmachine.test
+  # TODO: it seems to work but... breaks many of the other tests.
+  def test_openssl_accept_with_ca_file_and_hostname
+    omit "why does ca_file change global state for all SSL_CTX?"
+    chain = CERT_PEM + CA_PEM
+    server = {
+      cert: chain, private_key_file: PRIVATE_KEY_FILE,
+      verify_peer: true, ssl_verify_result: :ossl,
+    }
+    client = { ca_file: CA_FILE, hostname: "localhost", verify_peer: true, ssl_verify_result: :ossl }
+    client_server Client, Server, server: server, client: client
+    assert_empty Server.preverify_ok # no client cert sent
+    assert_equal [
+      true,  # =>
+      true,  # =>
+    ], Client.preverify_ok
+    assert Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
+    assert Server.handshake_completed?
+  end
+
+  # TODO: make and use an intermediate CA
+  # TODO: use eventmachine.localhost and/or eventmachine.test
+  # TODO: configure a chain file properly?
+  def test_openssl_fail_unverified_chain
+    omit_if(rbx?)
+    chain = CERT_PEM + CA_PEM
+    server = {
+      cert: chain, private_key_file: PRIVATE_KEY_FILE,
+      verify_peer: true, ssl_verify_result: :ossl,
+    }
+    client = { verify_peer: true, ssl_verify_result: :ossl }
+    client_server Client, Server, server: server, client: client
+    assert_empty Server.preverify_ok # no client cert sent
+    assert_equal [
+      false,  # => depth=0:num=20:unable to get local issuer certificate
+    ], Client.preverify_ok
+    refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
+    refute Server.handshake_completed?
+  end
+
+  def test_openssl_fail_unknown_ca
+    omit_if(rbx?)
+    server = CERT_CONFIG.merge verify_peer: true, ssl_verify_result: :ossl
+    client = { verify_peer: true, ssl_verify_result: :ossl }
+    client_server Client, Server, server: server, client: client
+    assert_empty Server.preverify_ok # no client cert sent
+    assert_equal [
+      false,  # => depth=0:num=20:unable to get local issuer certificate
+    ], Client.preverify_ok
+    refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
+    refute Server.handshake_completed?
   end
 
   def test_fail_no_peer_cert
@@ -38,13 +95,13 @@ class TestSSLVerify < Test::Unit::TestCase
     client_server Client, Server, server: server
 
     assert_empty Server.preverify_ok # no client cert sent
-    assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
+    assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer isn't called
 
     refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
     refute Server.handshake_completed?
   end
 
-  def test_accept_server
+  def test_server_override_with_accept
     omit_if(EM.library_type == :pure_ruby) # Server has a default cert chain
     omit_if(rbx?)
 
@@ -52,9 +109,13 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, client: CERT_CONFIG, server: server
 
-    # OpenSSL can't verify because its x509_store isn't configured
-    # but after we insist the chain certs are okay, it's happy with the peer.
-    assert_equal [false, false, true], Server.preverify_ok
+    # OpenSSL can't verify because it doesn't trust our CA.  But we insist its
+    # errors don't matter, so it eventually agrees with us.
+    assert_equal [
+      false,  # => depth=0:num=20:unable to get local issuer certificate
+      false,  # => depth=0:num=21:unable to verify the first certificate
+      true    # => depth-0:num=0:ok
+    ], Server.preverify_ok
     assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
 
     assert_equal CERT_PEM, Server.cert
@@ -62,17 +123,21 @@ class TestSSLVerify < Test::Unit::TestCase
     assert Server.handshake_completed?
   end
 
-  def test_accept_client
+  def test_client_override_with_accept
     omit_if(EM.library_type == :pure_ruby) # Server has a default cert chain
     omit_if(rbx?)
 
-    client = { verify_peer: true, ssl_verify_result: true }
+    client = { hostname: "localhost", verify_peer: true, ssl_verify_result: true }
 
     client_server Client, Server, server: CERT_CONFIG, client: client
 
-    # OpenSSL can't verify because its x509_store isn't configured
-    # but after we insist the chain certs are okay, it's happy with the peer.
-    assert_equal [false, false, true], Client.preverify_ok
+    # OpenSSL can't verify because it doesn't trust our CA.  But we insist its
+    # errors don't matter, so it eventually agrees with us.
+    assert_equal [
+      false,  # => depth=0:num=20:unable to get local issuer certificate
+      false,  # => depth=0:num=21:unable to verify the first certificate
+      true    # => depth-0:num=0:ok
+    ], Client.preverify_ok
     assert_empty Server.preverify_ok # no client cert sent
 
     assert_equal CERT_PEM, Client.cert
@@ -80,16 +145,14 @@ class TestSSLVerify < Test::Unit::TestCase
     assert Server.handshake_completed?
   end
 
-  def test_encoded_accept_server
+  def test_encoded_server_override_with_accept
     omit_if(EM.library_type == :pure_ruby) # Server has a default cert chain
     omit_if(rbx?)
 
-    server = { verify_peer: true, ssl_verify_result: true }
+    server = { hostname: "localhost", verify_peer: true, ssl_verify_result: true }
 
     client_server Client, Server, client: ENCODED_CERT_CONFIG, server: server
 
-    # OpenSSL can't verify because its X509_STORE isn't configured
-    # but after we insist the chain certs are okay, it's happy with the peer.
     assert_equal [false, false, true], Server.preverify_ok
     assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
 
@@ -98,16 +161,14 @@ class TestSSLVerify < Test::Unit::TestCase
     assert_equal CERT_PEM, Server.cert
   end
 
-  def test_encoded_accept_client
+  def test_encoded_client_override_with_accept
     omit_if(EM.library_type == :pure_ruby) # Server has a default cert chain
     omit_if(rbx?)
 
-    client = { verify_peer: true, ssl_verify_result: true }
+    client = { hostname: "localhost", verify_peer: true, ssl_verify_result: true }
 
     client_server Client, Server, server: ENCODED_CERT_CONFIG, client: client
 
-    # OpenSSL can't verify because its X509_STORE isn't configured
-    # but after we insist the chain certs are okay, it's happy with the peer.
     assert_equal [false, false, true], Client.preverify_ok
     assert_empty Server.preverify_ok # no client cert sent
 
@@ -124,8 +185,6 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, client: CERT_CONFIG, server: server
 
-    # OpenSSL can't verify because its X509_STORE isn't configured
-    # but it gives up after the first because we agreed with it.
     assert_equal [false], Server.preverify_ok
     assert_empty Client.preverify_ok # VERIFY_NONE: ssl_verify_peer not called
 
@@ -142,8 +201,6 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, server: CERT_CONFIG, client: client
 
-    # OpenSSL can't verify because its X509_STORE isn't configured
-    # but it gives up after the first because we agreed with it.
     assert_equal [false], Client.preverify_ok
     assert_empty Server.preverify_ok # no client cert sent
 

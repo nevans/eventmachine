@@ -887,37 +887,41 @@ int SslBox_t::VerifyPeer(bool preverify_ok, X509_STORE_CTX *ctx)
 	BIO_get_mem_ptr(out, &buf);
 	char *cert_str = buf->data;
 
-	int depth = X509_STORE_CTX_get_error_depth(ctx);
-	int err = X509_STORE_CTX_get_error(ctx);
-	std::cerr << "\nVerifyPeer: ";
-	X509_NAME *name = X509_get_subject_name(cert);
-	X509_NAME_print_ex_fp(stderr, name, 0, 0);
-	std::cerr
-		<< "\n  " << (preverify_ok ? "ok" : "ERROR")
-		<< ":num=" << err
-		<< ":" << X509_verify_cert_error_string(err)
-		<< ":depth=" << depth
-		<< "\n";
+	// The depth count is "level 0:peer certificate", "level 1: CA certificate",
+	// "level 2: higher level CA certificate", and so on.
+	/* int depth = X509_STORE_CTX_get_error_depth(ctx); */
+	/* int err = X509_STORE_CTX_get_error(ctx); */
+	/* std::cerr */
+	/* 	<< "\nVerifyPeer (depth=" << depth << ") "; */
+	/* X509_NAME *name = X509_get_subject_name(cert); */
+	/* X509_NAME_print_ex_fp(stderr, name, 0, 0); */
+	/* std::cerr */
+	/* 	<< "\n  " << (preverify_ok ? "ok" : "ERROR") */
+	/* 	<< ":num=" << err */
+	/* 	<< ":" << X509_verify_cert_error_string(err) */
+	/* 	<< "\n"; */
 
 	bool verify_hostname = Context->bVerifyHostname;
 	bool verified = preverify_ok;
 
-	// if a server is looking at the final cert in the client's cert chain
-	/* if (preverify_ok && verify_hostname && !SSL_is_server(ssl) && */
-	/* 		!X509_STORE_CTX_get_error_depth(ctx)) { */
-	/* 	// TODO: rb_protect... or delegate via EventCallback? */
-	/* 	verified = call_stdlib_verify_certificate_identity( */
-	/* 			cert_str, SniHostname.c_str()); */
+	// if the entire chain has been verified, now we verify identity
+	if (preverify_ok && verify_hostname && !SSL_is_server(ssl) &&
+			!X509_STORE_CTX_get_error_depth(ctx)) {
+		// TODO: rb_protect... or delegate via EventCallback?
+		verified = call_stdlib_verify_certificate_identity(
+				cert_str, SniHostname.c_str());
 
-	/* 	if (!verified) { */
-	/* 		preverify_ok = false; */
-/* #if defined(X509_V_ERR_HOSTNAME_MISMATCH) */
-	/* 		X509_STORE_CTX_set_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH); */
-/* #else */
-	/* 		X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED); */
-/* #endif */
-	/* 	} */
-	/* } */
+		/* std::cerr << "  verify_certificate_identity '" << SniHostname */
+		/* 	<< "' => " << (verified ? "OK" : "FAILED") << "\n"; */
+		if (!verified) {
+			preverify_ok = false;
+#if defined(X509_V_ERR_HOSTNAME_MISMATCH)
+			X509_STORE_CTX_set_error(ctx, X509_V_ERR_HOSTNAME_MISMATCH);
+#else
+			X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED);
+#endif
+		}
+	}
 
 	ConnectionDescriptor *cd =
 		dynamic_cast<ConnectionDescriptor *>(Bindable_t::GetObject(binding));
@@ -925,13 +929,13 @@ int SslBox_t::VerifyPeer(bool preverify_ok, X509_STORE_CTX *ctx)
 
 	BIO_free(out);
 
-	std::cerr << "  ssl_verify_peer returned " << (verified ? "ok" : "NOT VERIFIED") << "\n";
+	/* std::cerr << "  ssl_verify_peer returned " << (verified ? "ok" : "NOT VERIFIED") << "\n"; */
 	if (verified) {
 		X509_STORE_CTX_set_error(ctx, X509_V_OK);
 		return 1;
 	} else {
-		/* if (X509_STORE_CTX_get_error(ctx) == X509_V_OK) */
-		/* 	X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED); */
+		if (X509_STORE_CTX_get_error(ctx) == X509_V_OK)
+			X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED);
 		return 0;
 	}
 }

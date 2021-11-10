@@ -37,15 +37,16 @@ module EMSSLHandlers
   CA_NAME          = "eventmachine-ca"
   CERT_NAME        = "em-localhost"
 
-  CA_FILE          = "#{CERTS_DIR}/#{CA_NAME}.crt",
+  CA_FILE          = "#{CERTS_DIR}/#{CA_NAME}.crt"
   CERT_FILE        = "#{CERTS_DIR}/#{CERT_NAME}.crt"
   ENCODED_KEY_FILE = "#{CERTS_DIR}/#{CERT_NAME}.aes-key"
   PRIVATE_KEY_FILE = "#{CERTS_DIR}/#{CERT_NAME}.key"
   ENCODED_PASSFILE = "#{CERTS_DIR}/#{CERT_NAME}.pass"
-  CERT_PEM         = File.read CERT_FILE
-  PRIVATE_KEY_PEM  = File.read PRIVATE_KEY_FILE
-  ENCODED_KEY_PEM  = File.read ENCODED_KEY_FILE
-  ENCODED_KEY_PASS = File.read ENCODED_PASSFILE
+  CA_PEM           = File.read(CA_FILE).freeze
+  CERT_PEM         = File.read(CERT_FILE).freeze
+  PRIVATE_KEY_PEM  = File.read(PRIVATE_KEY_FILE).freeze
+  ENCODED_KEY_PEM  = File.read(ENCODED_KEY_FILE).freeze
+  ENCODED_KEY_PASS = File.read(ENCODED_PASSFILE).freeze
 
   IP, PORT = "127.0.0.1", 16784
 
@@ -82,6 +83,7 @@ module EMSSLHandlers
     def self.handshake_completed? ; !!@@handshake_completed end
     def self.preverify_ok         ;   @@preverify_ok        end
 
+    # TODO: replace "verify_peer: false" with ca_file: CA_FILE
     def post_init
       if @@tls
         start_tls verify_peer: false, **@@tls
@@ -91,11 +93,13 @@ module EMSSLHandlers
     end
 
     def ssl_verify_peer(cert, preverify_ok)
-      $stderr.puts "    Client, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
+      # $stderr.puts "    Client, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
       @@preverify_ok << preverify_ok
       @@cert = cert
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")
         raise @@ssl_verify_result.sub('|RAISE|', '')
+      elsif @@ssl_verify_result == :ossl
+        preverify_ok
       else
         @@ssl_verify_result
       end
@@ -153,11 +157,13 @@ module EMSSLHandlers
     end
 
     def ssl_verify_peer(cert, preverify_ok)
-      $stderr.puts "    Server, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
+      # $stderr.puts "    Server, ssl_verify_peer(%p, %p)" % [OpenSSL::X509::Certificate.new(cert).subject.to_s, preverify_ok]
       @@preverify_ok << preverify_ok
       @@cert = cert
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")
         raise @@ssl_verify_result.sub('|RAISE|', '')
+      elsif @@ssl_verify_result == :ossl
+        preverify_ok
       else
         @@ssl_verify_result
       end
