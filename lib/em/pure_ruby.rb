@@ -346,13 +346,6 @@ module EventMachine
       @tls_parms[signature][:context] = context or raise ArgumentError, "missing context"
     end
 
-    PEM_CERTIFICATE = /
-      ^-----BEGIN CERTIFICATE-----\n
-      .*?\n
-      -----END CERTIFICATE-----\n
-    /mx
-    private_constant :PEM_CERTIFICATE
-
     def start_tls signature
       selectable = Reactor.instance.get_selectable(signature) or
         raise "unknown io selectable for start_tls"

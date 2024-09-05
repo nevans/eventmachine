@@ -778,6 +778,13 @@ module EventMachine
         !(parm.nil? || parm.empty?)
       end
 
+      PEM_CERTIFICATE = /
+        ^-----BEGIN CERTIFICATE-----\n
+        .*?\n
+        -----END CERTIFICATE-----\n
+      /mx
+      private_constant :PEM_CERTIFICATE
+
       # This simplifies to_stdlib_ssl_ctx, which copies all ivars with
       # matching stdlib writers.
       #
@@ -795,10 +802,26 @@ module EventMachine
         self.cert_chain_file  = nil unless tls_parm_set?(cert_chain_file)
         self.key              = nil unless tls_parm_set?(key)
         self.private_key_file = nil unless tls_parm_set?(private_key_file)
+        self.cert = File.binread(cert_chain_file)  if cert_chain_file
+        self.key  = File.binread(private_key_file) if private_key_file
 
-        self.cert ||= File.read(cert_chain_file) if cert_chain_file
-        self.cert &&= OpenSSL::X509::Certificate.new(cert)
-        self.key  &&= OpenSSL::PKey::RSA.new(key, priv_key_pass)
+        if cert && !cert.is_a?(OpenSSL::X509::Certificate)
+          self.cert, *extra_chain_certs =
+            if (cert)
+              if OpenSSL::X509::Certificate.respond_to?(:load)
+                OpenSSL::X509::Certificate.load(cert)
+              elsif cert[PEM_CERTIFICATE]
+                # compatibility with openssl gem < 3.0 (ruby < 2.6)
+                cert.scan(PEM_CERTIFICATE)
+                  .map {|pem| OpenSSL::X509::Certificate.new(pem) }
+              else
+                [OpenSSL::X509::Certificate.new(cert)]
+              end
+            end
+          self.extra_chain_cert = extra_chain_certs if extra_chain_certs.any?
+        end
+
+        self.key  &&= OpenSSL::PKey::RSA.new(key, private_key_pass)
       end
 
     end
