@@ -81,9 +81,9 @@ module EventMachine
     class Connection
 
       def initialize(em_connection, context)
-        context.setup
         @signature = em_connection.signature
         @em_connection = em_connection
+        context.setup
         @context = context
         @sync_close = true
         @hostname = nil
@@ -104,8 +104,8 @@ module EventMachine
       #   connection without *also* closing the underlying connection.
       attr_accessor :sync_close
 
-      # Use instead of connect or accept.  The {em_connection} already knows
-      # whether it's a server or client.
+      # Use this instead of connect or accept.  The {em_connection} already
+      # knows whether it's a server or client.
       def start_tls
         if em_connection.ssl_connection != self
           raise ArgumentError, "EM::Connection doesn't match EM::SSL::Connection"
@@ -319,6 +319,7 @@ module EventMachine
             self.cert_store = DEFAULT_CERT_STORE
           end
         end
+        guard_cert_options!
         return params
       end
 
@@ -586,9 +587,10 @@ module EventMachine
       # @deprecated Provided for backwards compatibility.  Use {#ecdh_curves=}.
       alias ecdh_curve= ecdh_curves=
 
-      def dhparam=(value)
-        @tmp_dh = OpenSSL::PKey::DH.new(value)
-        @dhparam = value
+      def dhparam=(filepath)
+        pem = File.binread(filepath) if filepath
+        @tmp_dh = OpenSSL::PKey::DH.new(pem) if pem
+        @dhparam = filepath
       end
 
       # @todo this is currently only supported when using em/pure_ruby
@@ -596,7 +598,7 @@ module EventMachine
 
       # @todo this is currently only supported when using em/pure_ruby
       def tmp_dh
-        defined?(@tmp_dh) ? @tmp_dh : DH_ffdhe2048
+        @tmp_dh || DH_ffdhe2048
       end
 
       # @todo this is currently only supported when using em/pure_ruby
@@ -682,7 +684,7 @@ module EventMachine
 
       # Also runs setup
       def freeze
-        setup unless @setup_done
+        setup
         super
       end
 
@@ -693,16 +695,16 @@ module EventMachine
       #
       # @todo copy missing setup from stdlib's ossl_sslctx_setup
       def setup
-        return if frozen?
+        return if @setup_done
 
         guard_cert_options!
+
+        setup_stdlib_compat
 
         instance_variables.each do |name|
           ivar = instance_variable_get(name)
           ivar = -ivar.to_str if ivar.respond_to?(:to_str)
         end
-
-        setup_stdlib_compat
 
         @setup_done = true
         freeze
@@ -749,28 +751,24 @@ module EventMachine
 
       def guard_cert_options!
         [private_key_file, cert_chain_file].each do |file|
-          next if file.nil? or file.empty?
+          next unless tls_parm_set?(file)
           unless File.exist? file
             raise FileNotFoundException,
               "Could not find #{file} for #{self.class}.#{__method__}"
           end
         end
 
-        if !private_key_file.nil? && !private_key_file.empty? &&
-            !private_key.nil? && !private_key.empty?
+        if tls_parm_set?(private_key_file) && tls_parm_set?(private_key)
           raise BadPrivateKeyParams,
             "Specifying both private_key and private_key_file not allowed"
         end
 
-        if !cert_chain_file.nil? && !cert_chain_file.empty? &&
-            !cert.nil? && !cert.empty?
+        if tls_parm_set?(cert_chain_file) && tls_parm_set?(cert)
           raise BadCertParams, "Specifying both cert and cert_chain_file not allowed"
         end
 
-        if (!private_key_file.nil? && !private_key_file.empty?) ||
-            (!private_key.nil? && !private_key.empty?)
-          if (cert_chain_file.nil? || cert_chain_file.empty?) &&
-              (cert.nil? || cert.empty?)
+        if tls_parm_set?(private_key_file) || tls_parm_set?(private_key)
+          if !tls_parm_set?(cert_chain_file) && !tls_parm_set?(cert)
             raise BadParams, "You have specified a private key to use, but not the related cert"
           end
         end
@@ -799,7 +797,7 @@ module EventMachine
         self.private_key_file = nil unless tls_parm_set?(private_key_file)
 
         self.cert ||= File.read(cert_chain_file) if cert_chain_file
-        self.cert &&= OpenSSL::X509::Certificate(cert)
+        self.cert &&= OpenSSL::X509::Certificate.new(cert)
         self.key  &&= OpenSSL::PKey::RSA.new(key, priv_key_pass)
       end
 

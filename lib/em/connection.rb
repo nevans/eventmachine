@@ -515,7 +515,7 @@ module EventMachine
       args = args.dup
       context      = args.delete(:context)
 
-      sync_close   = args.delete(:sync_close)
+      sync_close   = args.delete(:sync_close) || true
       hostname     = args.delete(:hostname)
       sni_hostname = args.delete(:sni_hostname)
 
@@ -523,20 +523,18 @@ module EventMachine
         raise ArgumentError, "Do not send both hostname and sni_hostname"
       elsif context && args.length != 0
         raise ArgumentError, "Do not send both context and context params."
-      end
-
-      if context.nil?
+      elsif context.nil?
         context = EM::SSL::Context.new
         context.set_params(args)
       end
 
-      @ssl_connection = SSL::Connection.new(self, context)
+      @ssl_connection = EM::SSL::Connection.new(self, context)
       ssl_connection.hostname   = hostname || sni_hostname
-      ssl_connection.sync_close = sync_close unless sync_close.nil?
+      ssl_connection.sync_close = sync_close
       ssl_connection.start_tls
     end
 
-    # @return [SSL::Connection] the SSL connection, after calling start_tls
+    # @return [EM::SSL::Connection] the SSL connection, after calling start_tls
     attr_reader :ssl_connection
 
     # If [TLS](http://en.wikipedia.org/wiki/Transport_Layer_Security) is active on the connection, returns the remote [X509 certificate](http://en.wikipedia.org/wiki/X.509)
