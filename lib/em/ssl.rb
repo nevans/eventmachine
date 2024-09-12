@@ -703,18 +703,10 @@ module EventMachine
         freeze
       end
 
-      # @todo this is currently only supported when using em/pure_ruby
-      attr_reader :use_server_defaults
-
-      # @todo this is currently only supported when using em/pure_ruby
-      def use_server_defaults=(bool)
-        @use_server_defaults = !!bool unless bool == !!use_server_defaults
-      end
-
       # convert into an {OpenSSL::SSL::SSLContext} object.
       #
       # @param klass [Class] (OpenSSL::SSL::SSLContext) only change in testing
-      def to_stdlib_ssl_ctx(klass = OpenSSL::SSL::SSLContext)
+      def to_stdlib_ssl_ctx(server: false, klass: OpenSSL::SSL::SSLContext)
         setup # ensures all of the ivars are set
         ctx = klass.new
         STDLIB_ATTR_WRITERS.each do |m|
@@ -730,13 +722,12 @@ module EventMachine
             EventMachine::event_callback signature, SslVerify, [preverify_ok, store_ctx]
           }
         end
+        if server
+          ctx.cert ||= DefaultCertificate.cert
+          ctx.key  ||= DefaultCertificate.key
+        end
         ctx
       end
-
-      # @return [Boolean] whether default certifacates (etc) should be used
-      #   This is only (currently?) used by em/pure_ruby.  It will cause
-      #   SSL_OP_SINGLE_ECDH_USE to be set when {ecdh_curve} is set.
-      attr_accessor :use_server_defaults
 
       # @return [Boolean] whether to skip the post_connection_check from the
       #   verify_callback or ssl_handshake_completed.
@@ -805,11 +796,6 @@ module EventMachine
         self.cert ||= File.read(cert_chain_file) if cert_chain_file
         self.cert &&= OpenSSL::X509::Certificate(cert)
         self.key  &&= OpenSSL::PKey::RSA.new(key, priv_key_pass)
-
-        if use_server_defaults?
-          ctx.cert ||= DefaultCertificate.cert
-          ctx.key  ||= DefaultCertificate.key
-        end
       end
 
     end

@@ -361,14 +361,7 @@ module EventMachine
       }
 
       ctx = tls_parms.fetch(:context)
-      ctx.use_server_defaults = selectable.is_server
-      ctx = ctx.to_stdlib_ssl_ctx
-
-      # TODO: was this functional before?
-      # ctx.servername_cb = Proc.new do |_, server_name|
-      #   tls_parms[:server_name] = server_name
-      #   nil
-      # end
+      ctx = ctx.to_stdlib_ssl_ctx(server: selectable.is_server)
 
       ssl_io = OpenSSL::SSL::SSLSocket.new(selectable, ctx)
       ssl_io.sync_close = true
