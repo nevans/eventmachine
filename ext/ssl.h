@@ -145,6 +145,8 @@ extern "C" int em_ossl_ssl_verify_callback(int, X509_STORE_CTX*);
 
 #endif // WITH_SSL
 
+extern "C" int em_ssl_ssl_ex_binding_idx;
+extern "C" int em_ssl_ssl_ex_ptr_idx;
 
 #endif // __SslBox__H_
 

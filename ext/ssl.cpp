@@ -28,9 +28,10 @@ bool SslContext_t::bLibraryInitialized = false;
 // for now, the *only* X509 store
 X509_STORE* em_ossl_default_X509_STORE = NULL;
 
-static int em_ossl_ssl_ex_binding_idx;
-static int em_ossl_ssl_ex_ptr_idx;
-static int em_ossl_sslctx_ex_ptr_idx;
+extern "C" {
+    int em_ssl_ssl_ex_binding_idx;
+    int em_ssl_ssl_ex_ptr_idx;
+}
 
 static EVP_PKEY *DefaultPrivateKey = NULL;
 static X509 *DefaultCertificate = NULL;
@@ -197,18 +198,14 @@ em_ossl_init()
 		InitializeDefaultCredentials();
 		em_ossl_default_X509_STORE = InitializeDefaultX509Store();
 
-		em_ossl_ssl_ex_binding_idx = SSL_get_ex_new_index(
-				0, (void *)"em_ossl_ssl_ex_binding_idx", 0, 0, 0);
-		if (em_ossl_ssl_ex_binding_idx < 0)
+		em_ssl_ssl_ex_binding_idx = SSL_get_ex_new_index(
+				0, (void *)"em_ssl_ssl_ex_binding_idx", 0, 0, 0);
+		if (em_ssl_ssl_ex_binding_idx < 0)
 			em_ossl_raise("SSL_get_ex_new_index");
-		em_ossl_ssl_ex_ptr_idx = SSL_get_ex_new_index(
-				0, (void *)"em_ossl_ssl_ex_ptr_idx", 0, 0, 0);
-		if (em_ossl_ssl_ex_ptr_idx < 0)
+		em_ssl_ssl_ex_ptr_idx = SSL_get_ex_new_index(
+				0, (void *)"em_ssl_ssl_ex_ptr_idx", 0, 0, 0);
+		if (em_ssl_ssl_ex_ptr_idx < 0)
 			em_ossl_raise("SSL_get_ex_new_index");
-		em_ossl_sslctx_ex_ptr_idx = SSL_CTX_get_ex_new_index(
-				0, (void *)"em_ossl_sslctx_ex_ptr_idx", 0, 0, 0);
-		if (em_ossl_sslctx_ex_ptr_idx < 0)
-			em_ossl_raise("SSL_CTX_get_ex_new_index");
 
 }
 
@@ -605,8 +602,8 @@ SslBox_t::SslBox_t (
 	SSL_set_bio (pSSL, pbioRead, pbioWrite);
 
 	// Store a pointer to the binding signature in the SSL object so we can retrieve it later
-	SSL_set_ex_data(pSSL, em_ossl_ssl_ex_binding_idx, (void*) binding);
-	SSL_set_ex_data(pSSL, em_ossl_ssl_ex_ptr_idx, (void*) this);
+	SSL_set_ex_data(pSSL, em_ssl_ssl_ex_binding_idx, (void*) binding);
+	SSL_set_ex_data(pSSL, em_ssl_ssl_ex_ptr_idx, (void*) this);
 
 	/* TODO: move verify mode and callback into SSL_CTX */
 
@@ -865,7 +862,7 @@ extern "C" int em_ossl_ssl_verify_callback(int ok, X509_STORE_CTX *ctx)
 	SSL *ssl;
 
 	ssl = (SSL*) X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
-	binding = (uintptr_t) SSL_get_ex_data(ssl, em_ossl_ssl_ex_binding_idx);
+	binding = (uintptr_t) SSL_get_ex_data(ssl, em_ssl_ssl_ex_binding_idx);
 	ConnectionDescriptor *cd = dynamic_cast <ConnectionDescriptor*> (Bindable_t::GetObject(binding));
 	ok = cd->VerifySslPeer(ok, ctx) ? 1 : 0;
 	return ok;
