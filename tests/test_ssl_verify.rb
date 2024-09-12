@@ -42,6 +42,9 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, client: CERT_CONFIG, server: server
 
+    # OpenSSL can't verify because its x509_store isn't configured
+    # but after we insist the chain certs are okay, it's happy with the peer.
+    #
     # n.b. the error strings might change between openssl versions
     assert_equal [
       {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate"},
@@ -62,6 +65,9 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, server: CERT_CONFIG, client: client
 
+    # OpenSSL can't verify because its x509_store isn't configured
+    # but after we insist the chain certs are okay, it's happy with the peer.
+    #
     # n.b. the error strings might change between openssl versions
     assert_equal [
       {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate"},
@@ -82,6 +88,9 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, client: ENCODED_CERT_CONFIG, server: server
 
+    # OpenSSL can't verify because its X509_STORE isn't configured
+    # but after we insist the chain certs are okay, it's happy with the peer.
+    #
     # n.b. the error strings might change between openssl versions
     assert_equal [
       {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate"},
@@ -102,6 +111,9 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, server: ENCODED_CERT_CONFIG, client: client
 
+    # OpenSSL can't verify because its X509_STORE isn't configured
+    # but after we insist the chain certs are okay, it's happy with the peer.
+    #
     # n.b. the error strings might change between openssl versions
     assert_equal [
       {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate"},
@@ -122,6 +134,9 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, client: CERT_CONFIG, server: server
 
+    # OpenSSL can't verify because its X509_STORE isn't configured
+    # but it gives up after the first because we agreed with it.
+    #
     # n.b. the error strings might change between openssl versions
     assert_equal [
       {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate"},
@@ -140,6 +155,9 @@ class TestSSLVerify < Test::Unit::TestCase
 
     client_server Client, Server, server: CERT_CONFIG, client: client
 
+    # OpenSSL can't verify because its X509_STORE isn't configured
+    # but it gives up after the first because we agreed with it.
+    #
     # n.b. the error strings might change between openssl versions
     assert_equal [
       {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate"},
