@@ -90,6 +90,12 @@ static VALUE Intern_proxy_target_unbound;
 static VALUE Intern_proxy_completed;
 static VALUE Intern_connection_completed;
 
+static ID ID_callback_state;
+
+static ID id_i_ssl_connection;
+
+static ID id_i_context, id_i_hostname;
+
 static ID id_i_cert_store;
 static ID id_i_ca_file;
 static ID id_i_ca_path;
@@ -1761,8 +1767,12 @@ extern "C" void Init_rubyeventmachine()
 	Intern_proxy_completed = rb_intern ("proxy_completed");
 	Intern_connection_completed = rb_intern ("connection_completed");
 
+	ID_callback_state = rb_intern_const("callback_state");
+
 #define DefIVarID(name) do \
 	id_i_##name = rb_intern_const("@"#name); while (0)
+
+	DefIVarID(ssl_connection);
 
 	DefIVarID(options);
 	DefIVarID(max_proto_version);
@@ -1782,6 +1792,9 @@ extern "C" void Init_rubyeventmachine()
 	DefIVarID(ciphers);
 	DefIVarID(ecdh_curve);
 	DefIVarID(dhparam);
+
+	DefIVarID(context);
+	DefIVarID(hostname);
 
 	// INCOMPLETE, we need to define class Connections inside module EventMachine
 	// run_machine and run_machine_without_threads are now identical.
