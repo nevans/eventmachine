@@ -690,7 +690,7 @@ extern "C" int ssl_verify_wrapper(int ok, X509_STORE_CTX *ctx)
 	uintptr_t binding;
 	SSL *ssl;
 
-	ssl = (SSL*) X509_STORE_CTX_get_ex_data( ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+	ssl = (SSL*) X509_STORE_CTX_get_ex_data(ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
 	binding = (uintptr_t) SSL_get_ex_data(ssl, 0);
 	ConnectionDescriptor *cd = dynamic_cast <ConnectionDescriptor*> (Bindable_t::GetObject(binding));
 	ok = cd->VerifySslPeer(ok, ctx) ? 1 : 0;
