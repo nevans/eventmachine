@@ -116,8 +116,6 @@ static ID id_i_dhparam;
 
 static VALUE rb_cProcessStatus;
 
-static int em_ssl_ssl_ex_ptr_idx;
-
 #ifdef IS_RUBY_3_OR_LATER
 /* Structure definition from MRI Ruby 3.0 process.c */
 struct rb_process_status {
