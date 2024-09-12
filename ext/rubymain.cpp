@@ -105,8 +105,8 @@ static ID id_i_max_proto_version;
 static ID id_i_min_proto_version;
 static ID id_i_options;
 static ID id_i_ciphers;
-static ID id_i_ecdh_curve;;
-static ID id_i_dhparam;;
+static ID id_i_ecdh_curve;
+static ID id_i_dhparam;
 
 static VALUE rb_cProcessStatus;
 
