@@ -676,7 +676,7 @@ module EventMachine
       alias fail_if_no_peer_cert fail_if_no_peer_cert?
 
       STDLIB_ATTR_WRITERS = OpenSSL::SSL::SSLContext.instance_methods(false)
-        .select {|m| m.to_s.match? /\=$/ }
+        .select {|m| m.to_s.match?(/\=$/) }
         .map {|m| m.to_s.sub(/=$/, "").to_sym }
         .freeze
       private_constant :STDLIB_ATTR_WRITERS
