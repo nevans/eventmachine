@@ -145,7 +145,6 @@ module EventMachine
       # This method MUST be called after calling #connect to ensure that the
       # hostname of a remote peer has been verified.
       def post_connection_check(hostname)
-        peer_cert = self.peer_cert
         if peer_cert.nil?
           msg = "Peer verification enabled, but no certificate received."
           if using_anon_cipher?
