@@ -72,7 +72,7 @@ module EMSSLHandlers
       @@cipher_protocol = nil
       @@ssl_verify_result = @@tls ? @@tls.delete(:ssl_verify_result) : nil
       @@client_unbind = @@tls ? @@tls.delete(:client_unbind) : nil
-      extend BackCompatVerifyPeer if @@tls && @@tls.delete(:ssl_old_verify_peer)
+      extend BackCompatVerifyPeer if @@tls&.delete(:ssl_old_verify_peer)
     end
 
     def self.cert                 ;   @@cert                end
@@ -141,7 +141,7 @@ module EMSSLHandlers
       @@sni_hostname = "not set"
       @@ssl_verify_result    = @@tls ? @@tls.delete(:ssl_verify_result)    : nil
       @@stop_after_handshake = @@tls ? @@tls.delete(:stop_after_handshake) : nil
-      extend BackCompatVerifyPeer if @@tls && @@tls.delete(:ssl_old_verify_peer)
+      extend BackCompatVerifyPeer if @@tls&.delete(:ssl_old_verify_peer)
     end
 
     def self.cert                 ;   @@cert                end
