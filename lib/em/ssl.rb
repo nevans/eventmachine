@@ -4,6 +4,12 @@ module EventMachine
 
   module SSL
 
+    def verify_certificate_identity(cert_pem, hostname)
+      x509_cert = OpenSSL::X509::Certificate.new(cert_pem)
+      OpenSSL::SSL.verify_certificate_identity(x509_cert, hostname)
+    end
+    module_function :verify_certificate_identity
+
     module X509
 
       # This class wraps some of the data available from an X509_STORE_CTX
