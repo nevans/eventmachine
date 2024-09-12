@@ -526,7 +526,7 @@ SslContext_t::SslContext_t (bool is_server, const em_ssl_ctx_t *ctx) :
 
 	// Backward compatibility: don't set SSL_set_verify when VERIFY_NONE
 	if (ctx->verify_mode != SSL_VERIFY_NONE) {
-		SSL_CTX_set_verify(pCtx, ctx->verify_mode, em_ossl_ssl_verify_callback);
+		SSL_CTX_set_verify(pCtx, ctx->verify_mode, ssl_verify_wrapper);
 	}
 
 	int e;
@@ -853,10 +853,10 @@ const char *SslBox_t::GetSNIHostname()
 }
 
 /******************************
- * em_ossl_ssl_verify_callback
+ * ssl_verify_wrapper
  ******************************/
 
-extern "C" int em_ossl_ssl_verify_callback(int ok, X509_STORE_CTX *ctx)
+extern "C" int ssl_verify_wrapper(int ok, X509_STORE_CTX *ctx)
 {
 	uintptr_t binding;
 	SSL *ssl;

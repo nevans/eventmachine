@@ -141,7 +141,7 @@ class SslBox_t
 		PageList OutboundQ;
 };
 
-extern "C" int em_ossl_ssl_verify_callback(int, X509_STORE_CTX*);
+extern "C" int ssl_verify_wrapper(int, X509_STORE_CTX*);
 
 #endif // WITH_SSL
 
