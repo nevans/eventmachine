@@ -85,9 +85,9 @@ module EMSSLHandlers
 
     def post_init
       if @@tls
-        start_tls @@tls
+        start_tls verify_peer: false, **@@tls
       else
-        start_tls
+        start_tls verify_peer: false
       end
     end
 
@@ -155,9 +155,9 @@ module EMSSLHandlers
 
     def post_init
       if @@tls
-        start_tls @@tls
+        start_tls verify_peer: false, **@@tls
       else
-        start_tls
+        start_tls verify_peer: false
       end
     end
 
