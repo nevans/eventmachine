@@ -47,6 +47,11 @@ VALUE em_ssl_str_new(const char *, long, int *);
 #include "em_ossl_bio.h"
 #include "em_ossl_x509.h"
 
+extern int em_ssl_ssl_ex_binding_idx;
+extern int em_ssl_ssl_ex_ptr_idx;
+
+int em_ssl_ssl_verify_callback(VALUE conn, int preverify_ok, X509_STORE_CTX *ctx);
+
 #endif /* WITH_SSL */
 
 void Init_em_ssl(void);

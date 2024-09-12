@@ -17,11 +17,6 @@ See the file COPYING for complete licensing information.
 
 *****************************************************************************/
 
-extern "C" {
-    int em_ssl_ssl_ex_binding_idx;
-    int em_ssl_ssl_ex_ptr_idx;
-}
-
 #ifdef WITH_SSL
 
 #include "project.h"

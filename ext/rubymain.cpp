@@ -207,7 +207,7 @@ static inline VALUE event_callback (VALUE e_value)
 		{
 			VALUE conn = ensure_conn(signature);
 			X509_STORE_CTX *ctx = (X509_STORE_CTX *)data_str;
-			if (em_ssl_verify_cb_call(conn, data_num, ctx))
+			if (em_ssl_ssl_verify_callback(conn, data_num, ctx))
 				evma_accept_ssl_peer (signature);
 
 			return Qnil;
