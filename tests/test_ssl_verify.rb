@@ -20,6 +20,15 @@ class TestSSLVerify < Test::Unit::TestCase
     cert_chain_file:  "#{CERTS_DIR}/em-localhost.crt",
   }
 
+  def test_encoded_private_key_matches_pass
+    # just a sanity check...
+    assert_nothing_thrown {
+      pass = ENCODED_CERT_CONFIG[:private_key_pass]
+      key  = File.read(ENCODED_CERT_CONFIG[:private_key_file])
+      key  = OpenSSL::PKey.read(key, pass)
+    }
+  end
+
   def test_fail_no_peer_cert
     omit_if(rbx?)
 
