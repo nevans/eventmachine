@@ -83,6 +83,7 @@ module EMSSLHandlers
     def self.handshake_completed? ; !!@@handshake_completed end
     def self.verify_cb_args       ;   @@verify_cb_args      end
 
+    # TODO: replace "verify_peer: false" with ca_file: CA_FILE
     def post_init
       if @@tls
         start_tls verify_peer: false, **@@tls
@@ -105,6 +106,8 @@ module EMSSLHandlers
       @@cert = ctx.current_cert.to_pem
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")
         raise @@ssl_verify_result.sub('|RAISE|', '')
+      elsif @@ssl_verify_result == :ossl
+        preverify_ok
       else
         @@ssl_verify_result
       end
@@ -175,6 +178,8 @@ module EMSSLHandlers
       @@cert = ctx.current_cert.to_pem
       if @@ssl_verify_result.is_a?(String) && @@ssl_verify_result.start_with?("|RAISE|")
         raise @@ssl_verify_result.sub('|RAISE|', '')
+      elsif @@ssl_verify_result == :ossl
+        preverify_ok
       else
         @@ssl_verify_result
       end
