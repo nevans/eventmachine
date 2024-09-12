@@ -20,6 +20,72 @@ class TestSSLVerify < Test::Unit::TestCase
     cert_chain_file:  "#{CERTS_DIR}/em-localhost.crt",
   }
 
+  # TODO: move this text fixture sanity check to another file...
+  def test_encoded_private_key_matches_pass
+    # just a sanity check...
+    assert_nothing_thrown {
+      pass = ENCODED_CERT_CONFIG[:private_key_pass]
+      key  = File.read(ENCODED_CERT_CONFIG[:private_key_file])
+      key  = OpenSSL::PKey.read(key, pass)
+    }
+  end
+
+  # TODO: pass depth, error number, and error string to verify callback
+
+  # TODO: make and use one or more intermediate CAs
+  # TODO: use eventmachine.localhost and/or eventmachine.test
+  # TODO: it seems to work but... breaks many of the other tests.
+  def test_openssl_accept_with_ca_file_and_hostname
+    pend "why does ca_file change global state for all SSL_CTX?"
+    chain = CERT_PEM + CA_PEM
+    server = {
+      cert: chain, private_key_file: PRIVATE_KEY_FILE,
+      verify_peer: true, ssl_verify_result: :ossl,
+    }
+    client = { ca_file: CA_FILE, hostname: "localhost", verify_peer: true, ssl_verify_result: :ossl }
+    client_server Client, Server, server: server, client: client
+    assert_empty Server.verify_cb_args # no client cert sent
+    assert_equal [
+      {ok: true, }, # =>
+      {ok: true, }, # =>
+    ], Client.verify_cb_args
+    assert Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
+    assert Server.handshake_completed?
+  end
+
+  # TODO: make and use an intermediate CA
+  # TODO: use eventmachine.localhost and/or eventmachine.test
+  # TODO: configure a chain file properly?
+  def test_openssl_fail_unverified_chain
+    omit_if(rbx?)
+    chain = CERT_PEM + CA_PEM
+    server = {
+      cert: chain, private_key_file: PRIVATE_KEY_FILE,
+      verify_peer: true, ssl_verify_result: :ossl,
+    }
+    client = { verify_peer: true, ssl_verify_result: :ossl }
+    client_server Client, Server, server: server, client: client
+    assert_empty Server.verify_cb_args # no client cert sent
+    assert_equal [
+      {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate" },
+    ], Client.verify_cb_args
+    refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
+    refute Server.handshake_completed?
+  end
+
+  def test_openssl_fail_unknown_ca
+    omit_if(rbx?)
+    server = CERT_CONFIG.merge verify_peer: true, ssl_verify_result: :ossl
+    client = { verify_peer: true, ssl_verify_result: :ossl }
+    client_server Client, Server, server: server, client: client
+    assert_empty Server.verify_cb_args # no client cert sent
+    assert_equal [
+      {ok: false, depth: 0, code: 20, string: "unable to get local issuer certificate" },
+    ], Client.verify_cb_args
+    refute Client.handshake_completed? unless "TLSv1.3" == Client.cipher_protocol
+    refute Server.handshake_completed?
+  end
+
   def test_fail_no_peer_cert
     omit_if(rbx?)
 
