@@ -17,6 +17,10 @@ See the file COPYING for complete licensing information.
 
 *****************************************************************************/
 
+extern "C" {
+    int em_ssl_ssl_ex_binding_idx;
+    int em_ssl_ssl_ex_ptr_idx;
+}
 
 #ifdef WITH_SSL
 
@@ -27,11 +31,6 @@ bool SslContext_t::bLibraryInitialized = false;
 
 // for now, the *only* X509 store
 X509_STORE* em_ossl_default_X509_STORE = NULL;
-
-extern "C" {
-    int em_ssl_ssl_ex_binding_idx;
-    int em_ssl_ssl_ex_ptr_idx;
-}
 
 static EVP_PKEY *DefaultPrivateKey = NULL;
 static X509 *DefaultCertificate = NULL;
