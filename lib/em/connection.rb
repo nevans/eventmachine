@@ -484,10 +484,10 @@ module EventMachine
     #
     # @see #ssl_verify_peer
     def start_tls args={}
-      priv_key_path   = args[:private_key_file]
-      priv_key        = args[:private_key]
-      priv_key_pass   = args[:private_key_pass]
-      cert_chain_path = args[:cert_chain_file]
+      private_key_file = args[:private_key_file]
+      private_key      = args[:private_key]
+      private_key_pass = args[:private_key_pass]
+      cert_chain_file = args[:cert_chain_file]
       cert            = args[:cert]
       verify_peer     = args[:verify_peer]
       sni_hostname    = args[:sni_hostname]
@@ -497,22 +497,22 @@ module EventMachine
       dhparam         = args[:dhparam]
       fail_if_no_peer_cert = args[:fail_if_no_peer_cert]
 
-      [priv_key_path, cert_chain_path].each do |file|
+      [private_key_file, cert_chain_file].each do |file|
         next if file.nil? or file.empty?
         raise FileNotFoundException,
         "Could not find #{file} for start_tls" unless File.exist? file
       end
 
-      if !priv_key_path.nil? && !priv_key_path.empty? && !priv_key.nil? && !priv_key.empty?
+      if !private_key_file.nil? && !private_key_file.empty? && !private_key.nil? && !private_key.empty?
         raise BadPrivateKeyParams, "Specifying both private_key and private_key_file not allowed"
       end
 
-      if !cert_chain_path.nil? && !cert_chain_path.empty? && !cert.nil? && !cert.empty?
+      if !cert_chain_file.nil? && !cert_chain_file.empty? && !cert.nil? && !cert.empty?
         raise BadCertParams, "Specifying both cert and cert_chain_file not allowed"
       end
 
-      if (!priv_key_path.nil? && !priv_key_path.empty?) || (!priv_key.nil? && !priv_key.empty?)
-        if (cert_chain_path.nil? || cert_chain_path.empty?) && (cert.nil? || cert.empty?)
+      if (!private_key_file.nil? && !private_key_file.empty?) || (!private_key.nil? && !private_key.empty?)
+        if (cert_chain_file.nil? || cert_chain_file.empty?) && (cert.nil? || cert.empty?)
           raise BadParams, "You have specified a private key to use, but not the related cert"
         end
       end
@@ -546,7 +546,7 @@ module EventMachine
         end
       end
 
-      EventMachine::set_tls_parms(@signature, priv_key_path || '', priv_key || '', priv_key_pass || '', cert_chain_path || '', cert || '', verify_peer, fail_if_no_peer_cert, sni_hostname || '', cipher_list || '', ecdh_curve || '', dhparam || '', protocols_bitmask)
+      EventMachine::set_tls_parms(@signature, private_key_file || '', private_key || '', private_key_pass || '', cert_chain_file || '', cert || '', verify_peer, fail_if_no_peer_cert, sni_hostname || '', cipher_list || '', ecdh_curve || '', dhparam || '', protocols_bitmask)
       EventMachine::start_tls @signature
     end
 
