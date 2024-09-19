@@ -334,9 +334,11 @@ module EventMachine
     end
 
     # This method takes a series of positional arguments for specifying such
-    # things as private keys and certificate chains. It's expected that the
-    # parameter list will grow as we add more supported features. ALL of these
-    # parameters are optional, and can be specified as empty or nil strings.
+    # things as private keys and certificate chains.  This parameter list will
+    # be converted into only three parameters: signature, context, and
+    # sni_hostname.  Most of the existing parameters will be moved into context.
+    # ALL of these parameters are optional, and can be specified as empty or nil
+    # strings.
     # @private
     def set_tls_parms(signature,
                       private_key_file,
