@@ -484,69 +484,23 @@ module EventMachine
     #
     # @see #ssl_verify_peer
     def start_tls args={}
-      private_key_file = args[:private_key_file]
-      private_key      = args[:private_key]
-      private_key_pass = args[:private_key_pass]
-      cert_chain_file = args[:cert_chain_file]
-      cert            = args[:cert]
-      verify_peer     = args[:verify_peer]
-      sni_hostname    = args[:sni_hostname]
-      cipher_list     = args[:cipher_list]
-      ssl_version     = args[:ssl_version]
-      ecdh_curve      = args[:ecdh_curve]
-      dhparam         = args[:dhparam]
-      fail_if_no_peer_cert = args[:fail_if_no_peer_cert]
+      ctx = EM::SSL::SSLContext.new(args[:ssl_version])
+      ctx.private_key_file     = args[:private_key_file]
+      ctx.private_key          = args[:private_key]
+      ctx.private_key_pass     = args[:private_key_pass]
+      ctx.cert_chain_file      = args[:cert_chain_file]
+      ctx.cert                 = args[:cert]
+      ctx.verify_peer          = args[:verify_peer]
+      sni_hostname             = args[:sni_hostname]
+      ctx.cipher_list          = args[:cipher_list]
+      ctx.ecdh_curve           = args[:ecdh_curve]
+      ctx.dhparam              = args[:dhparam]
+      ctx.fail_if_no_peer_cert = args[:fail_if_no_peer_cert]
 
-      [private_key_file, cert_chain_file].each do |file|
-        next if file.nil? or file.empty?
-        raise FileNotFoundException,
-        "Could not find #{file} for start_tls" unless File.exist? file
-      end
+      ctx.setup
 
-      if !private_key_file.nil? && !private_key_file.empty? && !private_key.nil? && !private_key.empty?
-        raise BadPrivateKeyParams, "Specifying both private_key and private_key_file not allowed"
-      end
-
-      if !cert_chain_file.nil? && !cert_chain_file.empty? && !cert.nil? && !cert.empty?
-        raise BadCertParams, "Specifying both cert and cert_chain_file not allowed"
-      end
-
-      if (!private_key_file.nil? && !private_key_file.empty?) || (!private_key.nil? && !private_key.empty?)
-        if (cert_chain_file.nil? || cert_chain_file.empty?) && (cert.nil? || cert.empty?)
-          raise BadParams, "You have specified a private key to use, but not the related cert"
-        end
-      end
-
-      protocols_bitmask = 0
-      if ssl_version.nil?
-        protocols_bitmask |= EventMachine::EM_PROTO_TLSv1
-        protocols_bitmask |= EventMachine::EM_PROTO_TLSv1_1
-        protocols_bitmask |= EventMachine::EM_PROTO_TLSv1_2
-        if EventMachine.const_defined? :EM_PROTO_TLSv1_3
-          protocols_bitmask |= EventMachine::EM_PROTO_TLSv1_3
-        end
-      else
-        [ssl_version].flatten.each do |p|
-          case p.to_s.downcase
-          when 'sslv2'
-            protocols_bitmask |= EventMachine::EM_PROTO_SSLv2
-          when 'sslv3'
-            protocols_bitmask |= EventMachine::EM_PROTO_SSLv3
-          when 'tlsv1'
-            protocols_bitmask |= EventMachine::EM_PROTO_TLSv1
-          when 'tlsv1_1'
-            protocols_bitmask |= EventMachine::EM_PROTO_TLSv1_1
-          when 'tlsv1_2'
-            protocols_bitmask |= EventMachine::EM_PROTO_TLSv1_2
-          when 'tlsv1_3'
-            protocols_bitmask |= EventMachine::EM_PROTO_TLSv1_3
-          else
-            raise("Unrecognized SSL/TLS Protocol: #{p}")
-          end
-        end
-      end
-
-      EventMachine::set_tls_parms(@signature, private_key_file || '', private_key || '', private_key_pass || '', cert_chain_file || '', cert || '', verify_peer, fail_if_no_peer_cert, sni_hostname || '', cipher_list || '', ecdh_curve || '', dhparam || '', protocols_bitmask)
+      EventMachine::set_tls_parms(@signature,
+                                  *ctx.em_tls_parms(sni_hostname: sni_hostname))
       EventMachine::start_tls @signature
     end
 
