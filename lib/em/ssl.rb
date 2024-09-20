@@ -155,6 +155,7 @@ module EventMachine
       def em_tls_parms(hostname:)
         raise "call #setup before #em_tls_parms" unless @setup_done
         [
+          self,
           private_key_file      || '',
           private_key           || '',
           private_key_pass      || '',

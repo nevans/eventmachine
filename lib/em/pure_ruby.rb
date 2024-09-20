@@ -340,7 +340,7 @@ module EventMachine
     # ALL of these parameters are optional, and can be specified as empty or nil
     # strings.
     # @private
-    def set_tls_parms(signature,
+    def set_tls_parms(signature, context,
                       private_key_file,
                       private_key,
                       private_key_pass,
@@ -381,6 +381,7 @@ module EventMachine
       end
       @tls_parms ||= {}
       @tls_parms[signature] = {
+        context: context,
         :verify_peer => verify_peer,
         :fail_if_no_peer_cert => fail_if_no_peer_cert,
         :ssl_options => ssl_options
