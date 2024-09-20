@@ -351,40 +351,13 @@ module EventMachine
                       hostname,
                       cipher_list,
                       ecdh_curve,
-                      dhparam,
-                      protocols_bitmask)
-      bitmask = protocols_bitmask
-      ssl_options = OpenSSL::SSL::OP_ALL
-      if defined?(OpenSSL::SSL::OP_NO_SSLv2)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_SSLv2
-        ssl_options |= OpenSSL::SSL::OP_NO_SSLv2 if EM_PROTO_SSLv2 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_SSLv3)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_SSLv3
-        ssl_options |= OpenSSL::SSL::OP_NO_SSLv3 if EM_PROTO_SSLv3 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1 if EM_PROTO_TLSv1 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1_1)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_1
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_1 if EM_PROTO_TLSv1_1 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1_2)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_2
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_2 if EM_PROTO_TLSv1_2 & bitmask == 0
-      end
-      if defined?(OpenSSL::SSL::OP_NO_TLSv1_3)
-        ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_3
-        ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_3 if EM_PROTO_TLSv1_3 & bitmask == 0
-      end
+                      dhparam)
       @tls_parms ||= {}
       @tls_parms[signature] = {
         context: context,
         :verify_peer => verify_peer,
         :fail_if_no_peer_cert => fail_if_no_peer_cert,
-        :ssl_options => ssl_options
+        :ssl_options => context.em_ssl_options
       }
       @tls_parms[signature][:private_key] = File.binread(private_key_file) if tls_parm_set?(private_key_file)
       @tls_parms[signature][:private_key] = private_key if tls_parm_set?(private_key)

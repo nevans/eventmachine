@@ -167,8 +167,40 @@ module EventMachine
           cipher_list           || '',
           ecdh_curve            || '',
           dhparam               || '',
-          protocols_bitmask,
         ]
+      end
+
+      # @private
+      # SSLContext#options, after setting the protocol versions but before
+      # applying verify mode, etc.
+      def em_ssl_options
+        bitmask = protocols_bitmask
+        ssl_options = OpenSSL::SSL::OP_ALL
+        if defined?(OpenSSL::SSL::OP_NO_SSLv2)
+          ssl_options &= ~OpenSSL::SSL::OP_NO_SSLv2
+          ssl_options |= OpenSSL::SSL::OP_NO_SSLv2 if EM_PROTO_SSLv2 & bitmask == 0
+        end
+        if defined?(OpenSSL::SSL::OP_NO_SSLv3)
+          ssl_options &= ~OpenSSL::SSL::OP_NO_SSLv3
+          ssl_options |= OpenSSL::SSL::OP_NO_SSLv3 if EM_PROTO_SSLv3 & bitmask == 0
+        end
+        if defined?(OpenSSL::SSL::OP_NO_TLSv1)
+          ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1
+          ssl_options |= OpenSSL::SSL::OP_NO_TLSv1 if EM_PROTO_TLSv1 & bitmask == 0
+        end
+        if defined?(OpenSSL::SSL::OP_NO_TLSv1_1)
+          ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_1
+          ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_1 if EM_PROTO_TLSv1_1 & bitmask == 0
+        end
+        if defined?(OpenSSL::SSL::OP_NO_TLSv1_2)
+          ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_2
+          ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_2 if EM_PROTO_TLSv1_2 & bitmask == 0
+        end
+        if defined?(OpenSSL::SSL::OP_NO_TLSv1_3)
+          ssl_options &= ~OpenSSL::SSL::OP_NO_TLSv1_3
+          ssl_options |= OpenSSL::SSL::OP_NO_TLSv1_3 if EM_PROTO_TLSv1_3 & bitmask == 0
+        end
+        ssl_options
       end
 
       private

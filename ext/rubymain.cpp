@@ -89,6 +89,8 @@ static VALUE Intern_proxy_target_unbound;
 static VALUE Intern_proxy_completed;
 static VALUE Intern_connection_completed;
 
+static ID id_i_protocols_bitmask;
+
 static VALUE rb_cProcessStatus;
 
 #ifdef IS_RUBY_3_OR_LATER
@@ -528,7 +530,7 @@ static VALUE t_start_tls (VALUE self UNUSED, VALUE signature)
 t_set_tls_parms
 ***************/
 
-static VALUE t_set_tls_parms (VALUE self UNUSED, VALUE signature, VALUE context, VALUE privkeyfile, VALUE privkey, VALUE privkeypass, VALUE certchainfile, VALUE cert, VALUE verify_peer, VALUE fail_if_no_peer_cert, VALUE snihostname, VALUE cipherlist, VALUE ecdh_curve, VALUE dhparam, VALUE ssl_version)
+static VALUE t_set_tls_parms (VALUE self UNUSED, VALUE signature, VALUE context, VALUE privkeyfile, VALUE privkey, VALUE privkeypass, VALUE certchainfile, VALUE cert, VALUE verify_peer, VALUE fail_if_no_peer_cert, VALUE snihostname, VALUE cipherlist, VALUE ecdh_curve, VALUE dhparam)
 {
 	/* set_tls_parms takes a series of positional arguments for specifying
 	 * such things as private keys and certificate chains.  This parameter
@@ -537,6 +539,7 @@ static VALUE t_set_tls_parms (VALUE self UNUSED, VALUE signature, VALUE context,
 	 * moved into context.  ALL of these parameters are optional, and can be
 	 * specified as empty or nil strings.
 	 */
+	VALUE ssl_version = rb_funcall(context, id_i_protocols_bitmask, 0);
 	evma_set_tls_parms (NUM2BSIG (signature), StringValueCStr (privkeyfile), StringValueCStr (privkey), StringValueCStr (privkeypass), StringValueCStr (certchainfile), StringValueCStr (cert), (verify_peer == Qtrue ? 1 : 0), (fail_if_no_peer_cert == Qtrue ? 1 : 0), StringValueCStr (snihostname), StringValueCStr (cipherlist), StringValueCStr (ecdh_curve), StringValueCStr (dhparam), NUM2INT (ssl_version));
 	return Qnil;
 }
@@ -1642,6 +1645,8 @@ extern "C" void Init_rubyeventmachine()
 	Intern_proxy_completed = rb_intern ("proxy_completed");
 	Intern_connection_completed = rb_intern ("connection_completed");
 
+	id_i_protocols_bitmask = rb_intern_const("protocols_bitmask");
+
 	// INCOMPLETE, we need to define class Connections inside module EventMachine
 	// run_machine and run_machine_without_threads are now identical.
 	// Must deprecate the without_threads variant.
@@ -1669,7 +1674,7 @@ extern "C" void Init_rubyeventmachine()
 	rb_define_module_function (EmModule, "stop_tcp_server", (VALUE(*)(...))t_stop_server, 1);
 	rb_define_module_function (EmModule, "start_unix_server", (VALUE(*)(...))t_start_unix_server, 1);
 	rb_define_module_function (EmModule, "attach_sd", (VALUE(*)(...))t_attach_sd, 1);
-	rb_define_module_function (EmModule, "set_tls_parms", (VALUE(*)(...))t_set_tls_parms, 14);
+	rb_define_module_function (EmModule, "set_tls_parms", (VALUE(*)(...))t_set_tls_parms, 13);
 	rb_define_module_function (EmModule, "start_tls", (VALUE(*)(...))t_start_tls, 1);
 	rb_define_module_function (EmModule, "get_peer_cert", (VALUE(*)(...))t_get_peer_cert, 1);
 	rb_define_module_function (EmModule, "get_cipher_bits", (VALUE(*)(...))t_get_cipher_bits, 1);
