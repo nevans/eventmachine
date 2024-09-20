@@ -338,7 +338,19 @@ module EventMachine
     # parameter list will grow as we add more supported features. ALL of these
     # parameters are optional, and can be specified as empty or nil strings.
     # @private
-    def set_tls_parms signature, priv_key_path, priv_key, priv_key_pass, cert_chain_path, cert, verify_peer, fail_if_no_peer_cert, sni_hostname, cipher_list, ecdh_curve, dhparam, protocols_bitmask
+    def set_tls_parms(signature,
+                      private_key_file,
+                      private_key,
+                      private_key_pass,
+                      cert_chain_file,
+                      cert,
+                      verify_peer,
+                      fail_if_no_peer_cert,
+                      hostname,
+                      cipher_list,
+                      ecdh_curve,
+                      dhparam,
+                      protocols_bitmask)
       bitmask = protocols_bitmask
       ssl_options = OpenSSL::SSL::OP_ALL
       if defined?(OpenSSL::SSL::OP_NO_SSLv2)
@@ -371,12 +383,12 @@ module EventMachine
         :fail_if_no_peer_cert => fail_if_no_peer_cert,
         :ssl_options => ssl_options
       }
-      @tls_parms[signature][:priv_key] = File.binread(priv_key_path) if tls_parm_set?(priv_key_path)
-      @tls_parms[signature][:priv_key] = priv_key if tls_parm_set?(priv_key)
-      @tls_parms[signature][:priv_key_pass] = priv_key_pass if tls_parm_set?(priv_key_pass)
-      @tls_parms[signature][:cert_chain] = File.binread(cert_chain_path) if tls_parm_set?(cert_chain_path)
+      @tls_parms[signature][:private_key] = File.binread(private_key_file) if tls_parm_set?(private_key_file)
+      @tls_parms[signature][:private_key] = private_key if tls_parm_set?(private_key)
+      @tls_parms[signature][:private_key_pass] = private_key_pass if tls_parm_set?(private_key_pass)
+      @tls_parms[signature][:cert_chain] = File.binread(cert_chain_file) if tls_parm_set?(cert_chain_file)
       @tls_parms[signature][:cert_chain] = cert if tls_parm_set?(cert)
-      @tls_parms[signature][:sni_hostname] = sni_hostname if tls_parm_set?(sni_hostname)
+      @tls_parms[signature][:hostname] = hostname if tls_parm_set?(hostname)
       @tls_parms[signature][:cipher_list] = cipher_list.gsub(/,\s*/, ':') if tls_parm_set?(cipher_list)
       @tls_parms[signature][:dhparam] = File.read(dhparam) if tls_parm_set?(dhparam)
       @tls_parms[signature][:ecdh_curve] = ecdh_curve if tls_parm_set?(ecdh_curve)
@@ -411,8 +423,8 @@ module EventMachine
           [DefaultCertificate.cert]
         end
       key =
-        if tls_parms[:priv_key]
-          OpenSSL::PKey::RSA.new(tls_parms[:priv_key], tls_parms[:priv_key_pass])
+        if tls_parms[:private_key]
+          OpenSSL::PKey::RSA.new(tls_parms[:private_key], tls_parms[:private_key_pass])
         elsif selectable.is_server
           DefaultCertificate.key
         end
@@ -462,8 +474,8 @@ module EventMachine
 
       ssl_io = OpenSSL::SSL::SSLSocket.new(selectable, ctx)
       ssl_io.sync_close = true
-      if tls_parms[:sni_hostname]
-        ssl_io.hostname = tls_parms[:sni_hostname] if ssl_io.respond_to?(:hostname=)
+      if tls_parms[:hostname]
+        ssl_io.hostname = tls_parms[:hostname] if ssl_io.respond_to?(:hostname=)
       end
       selectable._evma_start_tls(ssl_io)
     end
