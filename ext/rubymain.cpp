@@ -89,7 +89,8 @@ static VALUE Intern_proxy_target_unbound;
 static VALUE Intern_proxy_completed;
 static VALUE Intern_connection_completed;
 
-static ID id_i_protocols_bitmask;
+static ID id_protocols_bitmask;
+static ID id_em_ssl_options;
 
 static VALUE rb_cProcessStatus;
 
@@ -539,8 +540,8 @@ static VALUE t_set_tls_parms (VALUE self UNUSED, VALUE signature, VALUE context,
 	 * moved into context.  ALL of these parameters are optional, and can be
 	 * specified as empty or nil strings.
 	 */
-	VALUE ssl_version = rb_funcall(context, id_i_protocols_bitmask, 0);
-	evma_set_tls_parms (NUM2BSIG (signature), StringValueCStr (privkeyfile), StringValueCStr (privkey), StringValueCStr (privkeypass), StringValueCStr (certchainfile), StringValueCStr (cert), (verify_peer == Qtrue ? 1 : 0), (fail_if_no_peer_cert == Qtrue ? 1 : 0), StringValueCStr (snihostname), StringValueCStr (cipherlist), StringValueCStr (ecdh_curve), StringValueCStr (dhparam), NUM2INT (ssl_version));
+	VALUE options = rb_funcall(context, id_em_ssl_options, 0);
+	evma_set_tls_parms (NUM2BSIG (signature), StringValueCStr (privkeyfile), StringValueCStr (privkey), StringValueCStr (privkeypass), StringValueCStr (certchainfile), StringValueCStr (cert), (verify_peer == Qtrue ? 1 : 0), (fail_if_no_peer_cert == Qtrue ? 1 : 0), StringValueCStr (snihostname), StringValueCStr (cipherlist), StringValueCStr (ecdh_curve), StringValueCStr (dhparam), NUM2ULONG (options));
 	return Qnil;
 }
 
@@ -1645,7 +1646,8 @@ extern "C" void Init_rubyeventmachine()
 	Intern_proxy_completed = rb_intern ("proxy_completed");
 	Intern_connection_completed = rb_intern ("connection_completed");
 
-	id_i_protocols_bitmask = rb_intern_const("protocols_bitmask");
+	id_protocols_bitmask = rb_intern_const("protocols_bitmask");
+	id_em_ssl_options    = rb_intern_const("em_ssl_options");
 
 	// INCOMPLETE, we need to define class Connections inside module EventMachine
 	// run_machine and run_machine_without_threads are now identical.
