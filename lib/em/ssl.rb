@@ -152,7 +152,7 @@ module EventMachine
       end
 
       # @private
-      def em_tls_parms(sni_hostname:)
+      def em_tls_parms(hostname:)
         raise "call #setup before #em_tls_parms" unless @setup_done
         [
           private_key_file      || '',
@@ -162,7 +162,7 @@ module EventMachine
           cert                  || '',
           verify_peer,
           fail_if_no_peer_cert,
-          sni_hostname          || '',
+          hostname              || '',
           cipher_list           || '',
           ecdh_curve            || '',
           dhparam               || '',

@@ -430,6 +430,11 @@ module EventMachine
     # your redefined {#post_init} method, or in the {#connection_completed} handler for
     # an outbound connection.
     #
+    # @option args [String] :hostname (nil)
+    #   Sets the server hostname used for SNI.
+    #
+    # @option args [String] :sni_hostname (nil)
+    #   An alias for **`:hostname`**.  Provided for backward compatibility.
     #
     # @option args [String] :cert_chain_file (nil) local path of a readable file that contants  a chain of X509 certificates in
     #                                              the [PEM format](http://en.wikipedia.org/wiki/Privacy_Enhanced_Mail),
@@ -484,6 +489,14 @@ module EventMachine
     #
     # @see #ssl_verify_peer
     def start_tls args={}
+      args = args.dup
+
+      hostname = args.delete(:hostname)
+      if hostname && args[:sni_hostname]
+        raise ArgumentError, "Do not send both :hostname and :sni_hostname"
+      end
+      hostname ||= args.delete(:sni_hostname)
+
       ctx = EM::SSL::SSLContext.new(args[:ssl_version])
       ctx.private_key_file     = args[:private_key_file]
       ctx.private_key          = args[:private_key]
@@ -491,7 +504,6 @@ module EventMachine
       ctx.cert_chain_file      = args[:cert_chain_file]
       ctx.cert                 = args[:cert]
       ctx.verify_peer          = args[:verify_peer]
-      sni_hostname             = args[:sni_hostname]
       ctx.cipher_list          = args[:cipher_list]
       ctx.ecdh_curve           = args[:ecdh_curve]
       ctx.dhparam              = args[:dhparam]
@@ -500,7 +512,7 @@ module EventMachine
       ctx.setup
 
       EventMachine::set_tls_parms(@signature,
-                                  *ctx.em_tls_parms(sni_hostname: sni_hostname))
+                                  *ctx.em_tls_parms(hostname: hostname))
       EventMachine::start_tls @signature
     end
 
