@@ -127,11 +127,11 @@ module EventMachine
       Reactor.instance.initialize_for_run
     end
 
-    # Changed 04Oct06: intervals from the caller are now in milliseconds, but our native-ruby
-    # processor still wants them in seconds.
+    # Changed 2025-02-12: intervals from the caller are now in milliseconds, but
+    # our native-ruby processor still stores them in microseconds.
     # @private
     def add_oneshot_timer interval
-      Reactor.instance.install_oneshot_timer(interval.to_f / 1000)
+      Reactor.instance.install_oneshot_timer(interval * 1000)
     end
 
     # @private
@@ -228,6 +228,10 @@ module EventMachine
       selectable.send_datagram data, Socket::pack_sockaddr_in(port, host)
     end
 
+    # @private
+    def current_time
+      Reactor.instance.current_time
+    end
 
     # Sets reactor quantum in milliseconds. The underlying Reactor function wants a (possibly
     # fractional) number of seconds.
@@ -490,9 +494,15 @@ module EventMachine
     end
 
     # @private
+    def get_comm_inactivity_timeout sig
+      s = Reactor.instance.get_selectable( sig ) or raise "unknown get_comm_inactivity_timeout target"
+      s.get_comm_inactivity_timeout
+    end
+
+    # @private
     def set_comm_inactivity_timeout sig, tm
       r = Reactor.instance.get_selectable( sig ) or raise "unknown set_comm_inactivity_timeout target"
-      r.set_inactivity_timeout tm
+      r.set_comm_inactivity_timeout tm
     end
 
     # @private
@@ -592,6 +602,7 @@ module EventMachine
     include Singleton
 
     HeartbeatInterval = 2
+    HeartbeatIntervalMicrosec = HeartbeatInterval * 1_000_000
 
     attr_reader :current_loop_time, :stop_scheduled
 
@@ -605,7 +616,7 @@ module EventMachine
 
     def install_oneshot_timer interval
       uuid = UuidGenerator::generate
-      (@timers_to_add || @timers) << [Time.now + interval, uuid]
+      (@timers_to_add || @timers) << [get_current_loop_time + interval, uuid]
       uuid
     end
 
@@ -620,8 +631,13 @@ module EventMachine
       @timers_to_add = SortedSet.new
       @timers_iterating = false # only set while iterating @timers
       set_timer_quantum(0.1)
-      @current_loop_time = Time.now
-      @next_heartbeat = @current_loop_time + HeartbeatInterval
+      @current_loop_time = get_current_loop_time
+      @next_heartbeat = @current_loop_time + HeartbeatIntervalMicrosec
+    end
+
+    def current_time
+      sec, subsec = @current_loop_time.divmod(1_000_000)
+      Time.at(sec, subsec, :microsecond)
     end
 
     def add_selectable io
@@ -640,7 +656,7 @@ module EventMachine
         open_loopbreaker
 
         loop {
-          @current_loop_time = Time.now
+          @current_loop_time = get_current_loop_time
 
           break if @stop_scheduled
           run_timers
@@ -680,7 +696,7 @@ module EventMachine
 
     def run_heartbeats
       if @next_heartbeat <= @current_loop_time
-        @next_heartbeat = @current_loop_time + HeartbeatInterval
+        @next_heartbeat = @current_loop_time + HeartbeatIntervalMicrosec
         @selectables.each {|k,io| io.heartbeat}
       end
     end
@@ -749,6 +765,18 @@ module EventMachine
       @timer_quantum = interval_in_seconds
     end
 
+    if defined?(Process::CLOCK_MONOTONIC_RAW)
+      # Uses CLOCK_MONOTONIC_RAW on the platforms that support it
+      def get_current_loop_time
+        Process.clock_gettime(Process::CLOCK_MONOTONIC_RAW, :microsecond)
+      end
+    else
+      # Process.clock_gettime emulates CLOCK_MONOTONIC on some platforms
+      def get_current_loop_time
+        Process.clock_gettime(Process::CLOCK_MONOTONIC, :microsecond)
+      end
+    end
+
   end
 
 end
@@ -770,7 +798,8 @@ class IO
   def_delegator :@eventmachine_selectable, :get_sockname
   def_delegator :@eventmachine_selectable, :send_datagram
   def_delegator :@eventmachine_selectable, :get_outbound_data_size
-  def_delegator :@eventmachine_selectable, :set_inactivity_timeout
+  def_delegator :@eventmachine_selectable, :get_comm_inactivity_timeout
+  def_delegator :@eventmachine_selectable, :set_comm_inactivity_timeout
   def_delegator :@eventmachine_selectable, :heartbeat
   def_delegator :@eventmachine_selectable, :io
   def_delegator :@eventmachine_selectable, :io=
@@ -832,8 +861,12 @@ module EventMachine
       nil
     end
 
-    def set_inactivity_timeout tm
-      @inactivity_timeout = tm
+    def get_comm_inactivity_timeout
+      (@inactivity_timeout || 0.0) / 1_000_000 # convert microseconds to seconds
+    end
+
+    def set_comm_inactivity_timeout tm
+      @inactivity_timeout = tm * 1_000_000 # convert seconds to microseconds
     end
 
     def heartbeat
